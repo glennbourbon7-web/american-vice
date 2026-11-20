@@ -942,7 +942,7 @@ const EDGE = 7;    // outer sidewalk width past the last roads
 function quad(G, a, b, c, d, uv = [[0, 0], [1, 0], [1, 1], [0, 1]]) { const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
   let n = [e1[1]*e2[2] - e1[2]*e2[1], e1[2]*e2[0] - e1[0]*e2[2], e1[0]*e2[1] - e1[1]*e2[0]]; const l = Math.hypot(...n) || 1; n = n.map(v => v/l); const tl = Math.hypot(...e1) || 1, t = e1.map(v => v/tl);
   const P = [a, b, c, d]; for (const i of [0, 1, 2, 0, 2, 3]) G.v.push(...P[i], ...n, ...t, uv[i][0], uv[i][1]); }
-const AWN = [];
+const AWN = [], TOWERS = [], LOWS = [], DOORS = [];
 
 
 // ---- dumpsters (street prop 001, ported) ----
@@ -1040,6 +1040,7 @@ function building(x0, z0, x1, z1, core, open) {
   const w = x1 - x0, d = z1 - z0, cx = (x0 + x1)/2, cz = (z0 + z1)/2;
   SOLID.push([x0, z0, x1, z1]);
   const tower = core > .35 && w > 24 && d > 24 && R() < .3 + core;
+  (tower ? TOWERS : LOWS).push([x0, z0, x1, z1, open]);
   if (tower) {
     const floors = Math.round(16 + core*36 + R()*10), lob = 8, sh = pick(["office", "ribbon"]);
     const ins = 1 + R()*1.5, H = lob + floors*3.8;
@@ -1121,9 +1122,34 @@ LX.roads.forEach((rx, i) => LZ.roads.forEach((rz, j) => {
       box(g("EW" + k), x - p - .01, SWY + yy - .1, hz - .1, x - p + .01, SWY + yy + .1, hz + .1); box(g("EW" + k), x + p - .01, SWY + yy - .1, hz - .1, x + p + .01, SWY + yy + .1, hz + .1); }
   } }));
 
+// ---- enterable buildings: GNS Studios + AP Tower in two lobbies, Clara Powell's campaign office in a storefront ----
+const entTex = (bg, fg, l1, l2, logo) => facade(1024, 256, (g2, w, h) => { g2.fillStyle = bg; g2.fillRect(0, 0, w, h); g2.fillStyle = "rgba(255,255,255,.08)"; g2.fillRect(0, 0, w, 8); g2.fillStyle = "rgba(0,0,0,.25)"; g2.fillRect(0, h - 10, w, 10);
+  if (logo) logo(g2, w, h); g2.fillStyle = fg; g2.textAlign = "center"; g2.textBaseline = "middle"; g2.font = "bold 92px Arial"; g2.fillText(l1, w/2 + (logo ? 90 : 0), h*.42); g2.font = "bold 34px Arial"; g2.fillText(l2, w/2 + (logo ? 90 : 0), h*.8);
+  for (let i = 0; i < 500; i++) { g2.fillStyle = rnd() < .5 ? "rgba(0,0,0,.05)" : "rgba(255,255,255,.04)"; g2.fillRect(rnd()*w, rnd()*h, 2, 2); } });
+const ENT = { gns: entTex("#0f2d55", "#ffffff", "GNS STUDIOS", "NEWS · RADIO · GNS+", (g2, w, h) => { g2.fillStyle = "#c8102e"; g2.fillRect(40, 40, 200, 140); g2.fillStyle = "#fff"; g2.font = "bold 80px Arial"; g2.textAlign = "center"; g2.textBaseline = "middle"; g2.fillText("GNS", 140, 112); }),
+  ap: entTex("#1b1b1d", "#f2f2f2", "AP TOWER", "THE ASSOCIATED PRESSURE", (g2, w, h) => { g2.fillStyle = "#e01b22"; g2.beginPath(); g2.arc(140, 115, 90, 0, 7); g2.fill(); g2.fillStyle = "#fff"; g2.font = "bold 84px Arial"; g2.textAlign = "center"; g2.textBaseline = "middle"; g2.fillText("AP", 140, 118); }),
+  cp: entTex("#7a1020", "#fff4e0", "POWELL FOR GOVERNOR", "CAMPAIGN HEADQUARTERS", null) };
+const doorT = facade(256, 256, (g2, w, h) => { g2.fillStyle = "#25282c"; g2.fillRect(0, 0, w, h); for (const x of [10, 132]) { g2.fillStyle = "#5d7a8a"; g2.fillRect(x, 10, 114, h - 20); const gr = g2.createLinearGradient(x, 0, x + 114, h); gr.addColorStop(0, "rgba(255,255,255,.35)"); gr.addColorStop(.5, "rgba(255,255,255,0)"); g2.fillStyle = gr; g2.fillRect(x, 10, 114, h - 20); }
+  g2.fillStyle = "#c9ced5"; g2.fillRect(112, 90, 6, 80); g2.fillRect(138, 90, 6, 80); g2.fillStyle = "#e9e5dc"; g2.font = "bold 14px Arial"; g2.textAlign = "center"; g2.fillText("PUSH", 67, 140); g2.fillText("PUSH", 189, 140); });
+function entrance(id, b, isTower) { const [x0, z0, x1, z1, open] = b, side = open.n ? "n" : open.s ? "s" : open.w ? "w" : "e", fx = side === "e" ? 1 : side === "w" ? -1 : 0, fz = side === "s" ? 1 : side === "n" ? -1 : 0;
+  const cx = (x0 + x1)/2, cz = (z0 + z1)/2, fxp = side === "e" ? x1 : side === "w" ? x0 : cx, fzp = side === "s" ? z1 : side === "n" ? z0 : cz, o = isTower ? .32 : .3;
+  const px = fxp + fx*o, pz = fzp + fz*o, SW = isTower ? 10 : 8;
+  plate("ent_" + id, "sback", px + fx*.12, isTower ? 6.1 : 5.3, pz + fz*.12, fx, fz, [[-SW/2, -1.1], [SW/2, -1.1], [SW/2, 1.1], [-SW/2, 1.1]], ([a, b2]) => [.5 + a/SW, .5 - b2/2.2], .1);
+  plate("door", "metal", px + fx*.04, SWY + 1.25, pz + fz*.04, fx, fz, [[-1.1, -1.25], [1.1, -1.25], [1.1, 1.25], [-1.1, 1.25]], ([a, b2]) => [.5 + a/2.2, .5 - b2/2.5], .03);
+  // canopy over the door on two chrome posts
+  const rx = fz, rz = -fx, C = (a, y, d) => [px + rx*a + fx*d, y, pz + rz*a + fz*d];
+  quad(g("canopy"), C(-1.8, 3.3, 0), C(1.8, 3.3, 0), C(1.8, 3.15, 2.4), C(-1.8, 3.15, 2.4)); quad(g("canopy"), C(1.8, 3.08, 0), C(-1.8, 3.08, 0), C(-1.8, 2.98, 2.4), C(1.8, 2.98, 2.4));
+  for (const a of [-1.75, 1.75]) { const q = C(a, 0, 2.3); box(g("metal"), q[0] - .05, SWY, q[2] - .05, q[0] + .05, 3.1, q[2] + .05); }
+  pool(g("mark"), px + fx*1.4, pz + fz*1.4, 1.1, SWY + .02);
+  DOORS.push({ id, x: px + fx*1.4, z: pz + fz*1.4, fx, fz }); }
+{ const d0 = (b) => Math.hypot((b[0] + b[2])/2 - (CX + 14), (b[1] + b[3])/2 - (CZ + 18)), facing = b => b[4].n || b[4].s || b[4].e || b[4].w;
+  const T2 = TOWERS.filter(facing).sort((a, b) => d0(a) - d0(b)), L2 = LOWS.filter(facing).sort((a, b) => d0(a) - d0(b));
+  if (T2[0]) entrance("gns", T2[0], true); if (T2[3]) entrance("ap", T2[3], true); else if (T2[1]) entrance("ap", T2[1], true); if (L2[1]) entrance("cp", L2[1], false); }
+
 // ---- awnings: sloped canvas + scalloped valance; spans are cut where a tree canopy or lamp would pass through ----
 for (const [k, a0, a1, w, ox, oz] of AWN) { const blockers = TREES.map(t => [t[1], t[2], t[0] === "oak" ? 3.6 : 1.2]).concat(PROPS.map(p => [p[1], p[2], .6]));
-  let spans = [[a0, a1]]; const along = ox ? 2 : 0;   // along axis: z for east/west faces, x for north/south
+  if (DOORS.some(d => Math.hypot((ox ? w : (a0 + a1)/2) - d.x, (ox ? (a0 + a1)/2 : w) - d.z) < Math.max(4, (a1 - a0)/2 + 2))) continue;
+  let spans = [[a0, a1]];   // along axis: z for east/west faces, x for north/south
   for (const [bx, bz, r] of blockers) { const perp = ox ? (bx - w)*ox : (bz - w)*oz, at = ox ? bz : bx; if (perp < -.5 || perp > 1.6 + r) continue; const c0 = at - r - .3, c1 = at + r + .3;
     spans = spans.flatMap(([s0, s1]) => c1 < s0 || c0 > s1 ? [[s0, s1]] : [[s0, c0], [c1, s1]].filter(([p, q]) => q - p > 2.2)); }
   for (const [s0, s1] of spans) { const P = (t, out, y) => ox ? [w + ox*out, y, t] : [t, y, w + oz*out]; const fw = ox ? ox > 0 : oz < 0;
@@ -1205,9 +1231,9 @@ const C = { white: [.86, .86, .82], yellow: [.86, .7, .2], curb: [.62, .61, .58]
   stop: [.75, .08, .06] };
 const AWC = { awnR: [.62, .12, .1], awnG: [.12, .38, .22], awnB: [.14, .24, .52], awnK: [.16, .16, .17] };
 return {
-  SOLID, LX, LZ, CX, CZ, ALLEYS, TREES, PROPS, EDGE, get GARAGE() { return GARAGE; },
+  SOLID, LX, LZ, CX, CZ, ALLEYS, TREES, PROPS, EDGE, DOORS, get GARAGE() { return GARAGE; },
   shadow(m, on) { gl.useProgram(pr); gl.uniformMatrix4fv(U("uShVP"), false, m); gl.uniform1i(U("uShTex"), 2); gl.uniform1f(U("uShOn"), on); gl.uniform1f(U("uShTexel"), PHONE ? 1/1024 : 1/2048); },
-  depth(fn) { for (const k in M) if (!/^(asph|pave|alley|pool|white|yellow|dtr|dec0|dec1|lamp|hill|treeline|far.*)$/.test(k)) fn(M[k]); },
+  depth(fn) { for (const k in M) if (!/^(asph|pave|alley|pool|white|yellow|dtr|dec0|dec1|lamp|hill|treeline|mark|far.*)$/.test(k)) fn(M[k]); },
   // ground height at a point (sidewalks raised)
   groundY(x, z) { const X0 = LX.roads[0][0], X1 = LX.roads[LX.roads.length - 1][1], Z0 = LZ.roads[0][0], Z1 = LZ.roads[LZ.roads.length - 1][1]; if (x < X0 || x > X1 || z < Z0 || z > Z1) return SWY; for (const bx of LX.blocks) if (x > bx[0] && x < bx[1]) for (const bz of LZ.blocks) if (z > bz[0] && z < bz[1]) return SWY; return 0; },
   draw(VP, eye, n, t) {
@@ -1222,6 +1248,8 @@ return {
     drawM(M.gsign, signT, 4, null, [7.2, 1.5], [1, 1, 1]);
     for (const k in AWC) { drawM(M[k], awnT, 4, null, [1.6, 1], AWC[k]); drawM(M[k + "V"], valT, 6.6, null, [1, 1], AWC[k]); }
     drawM(M.stopF, stopT, 6.6, null, [1, 1], [1, 1, 1]); drawM(M.blade, bladeT, 4, null, [1, 1], [1, 1, 1]); drawM(M.sback, sbackT, 4, null, [.5, .5], [1, 1, 1]); drawM(M.spole, spoleT, 4, null, [.25, 1], [1, 1, 1]);
+    for (const id in ENT) drawM(M["ent_" + id], ENT[id], 4, null, [1, 1], [1, 1, 1]); drawM(M.door, doorT, 4, null, [1, 1], [1, 1, 1]); drawM(M.canopy, null, 2, null, null, [.12, .13, .15]);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false); drawM(M.mark, poolT, 5, null, null, [.95*(.7 + .3*Math.sin(t*4)), .7*(.7 + .3*Math.sin(t*4)), .15]); gl.depthMask(true); gl.disable(gl.BLEND);
     drawM(M.hill, hillT, 7, null, [1, 1], [1, 1, 1]); drawM(M.treeline, treelineT, 7, null, [1, 1], [1, 1, 1]);
     drawM(M.lamp, null, 3, null, null, n > .5 ? [1, .86, .6] : [.7, .7, .66]);
     // signals: NS green 0-12s, yellow 12-15, then EW green 15-27, yellow 27-30
@@ -1404,7 +1432,7 @@ const CARS = (function () {
   function build(type, col) { const S = SPECS[type]; col = col || S.colors[0]; const root = node(), body = node(); root.kids.push(body);
     for (const mat in SH.body) body.meshes.push(inst("body", mat, col));
     const T = texes(); let bar = null;
-    if (type === "taxi") { add(body, boxG(.7, .22, .28, [0, 1.62, -.35]), "#ffffff", { tex: T.taxiSign, shine: .3 }); add(body, boxG(.5, .04, .2, [0, 1.5, -.35]), "#111"); }
+    if (type === "taxi") { add(body, boxG(.7, .22, .28, [0, 1.62, -.35]), "#ffffff", { tex: T.taxiSign, shine: .3 }); add(body, boxG(.5, .04, .2, [0, 1.5, -.35]), "#111111"); }
     if (type === "police") { add(body, boxG(1.7, .3, .1, [0, .55, 2.66]), "#141414"); add(body, boxG(1.2, .05, .3, [0, 1.52, -.3]), "#1a1a1c"); bar = { r: [], b: [] };
       for (let k = 0; k < 4; k++) { const m = mesh(boxG(.27, .11, .26, [-.45 + k*.3, 1.6, -.3]), k < 2 ? "#5a0c10" : "#0c1a5a", { shine: .5 }); body.meshes.push(m); (k < 2 ? bar.r : bar.b).push(m); } }
     const wheels = []; for (const k in WHEELS) { const [x, y, z, front] = WHEELS[k], w = node([x, y, z]), spin = node(); w.kids.push(spin); root.kids.push(w);
@@ -1426,6 +1454,254 @@ const CARS = (function () {
       if (blockedNow) st.v *= -.25; else { st.x = nx; st.z = nz; st.h = nh; }
       st.y += (CITY.groundY(st.x, st.z) - st.y)*Math.min(1, dt*10); st.roll += (-st.steer*st.v*.008 - st.roll)*Math.min(1, dt*3); st.pitch += ((thr > 0 ? -.012 : brake || thr < 0 ? .018 : 0)*Math.min(1, Math.abs(st.v)/4) - st.pitch)*Math.min(1, dt*3); st.spinWheels(dt); } }); }
   return { SPECS, ORDER, makeCar, build, ready, get ok() { return ok; } }; })();
+
+/* ===================== INTERIORS: GNS Studios (Port Calloway Interior Atlas §5, §12) =====================
+   Built from reusable parametric prefabs (OFF-01..10, RAD-01..05, TV-04/05) made of separate parts, then batched per material.
+   The interior lives at its own spot in world space (IO) and is drawn instead of the city while the player is inside. */
+const INTERIOR = (function () {
+  const IO = [4000, 0, 4000];                       // world origin of the GNS interior (local x 0..18, z 0..12, street door at z = 0)
+  /* ---------- tiny transform kit ---------- */
+  const rot = (rx, ry, rz) => { const cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry), cz = Math.cos(rz), sz = Math.sin(rz);
+    const X = [1, 0, 0, 0, cx, -sx, 0, sx, cx], Y = [cy, 0, sy, 0, 1, 0, -sy, 0, cy], Z = [cz, -sz, 0, sz, cz, 0, 0, 0, 1];
+    const m3 = (a, b) => { const o = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) o.push(a[i*3]*b[j] + a[i*3 + 1]*b[3 + j] + a[i*3 + 2]*b[6 + j]); return o; };
+    return m3(Y, m3(X, Z)); };
+  const fr = (x = 0, y = 0, z = 0, ry = 0, rx = 0, rz = 0) => ({ R: rot(rx, ry, rz), t: [x, y, z] });
+  const ap = (m, p) => [m.R[0]*p[0] + m.R[1]*p[1] + m.R[2]*p[2] + m.t[0], m.R[3]*p[0] + m.R[4]*p[1] + m.R[5]*p[2] + m.t[1], m.R[6]*p[0] + m.R[7]*p[1] + m.R[8]*p[2] + m.t[2]];
+  const apN = (m, p) => [m.R[0]*p[0] + m.R[1]*p[1] + m.R[2]*p[2], m.R[3]*p[0] + m.R[4]*p[1] + m.R[5]*p[2], m.R[6]*p[0] + m.R[7]*p[1] + m.R[8]*p[2]];
+  const cmp = (a, b) => { const R = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) R.push(a.R[i*3]*b.R[j] + a.R[i*3 + 1]*b.R[3 + j] + a.R[i*3 + 2]*b.R[6 + j]); return { R, t: ap(a, b.t) }; };
+  /* ---------- batcher: one mesh per material, split at 60k vertices ---------- */
+  const BATCH = {}; let texId = 1; const TID = new Map(); const tid = t => { if (!t) return 0; if (!TID.has(t)) TID.set(t, texId++); return TID.get(t); };
+  function put(m, g, col, o = {}) { const k = col + "|" + tid(o.tex) + "|" + (o.shine || 0) + "|" + (o.unlit ? 1 : 0) + "|" + (o.cut ? 1 : 0);
+    let B = BATCH[k]; if (!B) B = BATCH[k] = { col, o, parts: [{ p: [], n: [], u: [], i: [] }] }; let P = B.parts[B.parts.length - 1];
+    if (P.p.length/3 + g.p.length/3 > 60000) { P = { p: [], n: [], u: [], i: [] }; B.parts.push(P); }
+    const base = P.p.length/3; for (let v = 0; v < g.p.length/3; v++) { const q = ap(m, [g.p[v*3], g.p[v*3 + 1], g.p[v*3 + 2]]), nn = apN(m, [g.n[v*3], g.n[v*3 + 1], g.n[v*3 + 2]]); P.p.push(...q); P.n.push(...nn); P.u.push(g.u[v*2], g.u[v*2 + 1]); }
+    for (const i of g.i) P.i.push(base + i); }
+  /* ---------- primitives (local, centred unless noted) ---------- */
+  const se = (s, n) => Math.sign(s)*Math.pow(Math.abs(s), 2/n);
+  // swept superellipse: rows [y, rx, rz]; caps optional; n = squareness (2 round .. 10 boxy)
+  function sweep(rows, n = 2, cols = 16, caps = [true, true]) { const G = grid(rows.length - 1, cols, (a, b, r) => { const [y, rx, rz] = rows[r], ph = -Math.PI + 2*Math.PI*b; return [rx*se(Math.sin(ph), n), y, rz*se(Math.cos(ph), n), b, a]; });
+    const add = (row, up) => { const [y, rx, rz] = row, c = grid(1, cols, (a, b) => { const ph = -Math.PI + 2*Math.PI*b, k = up ? 1 - a : a; return [rx*se(Math.sin(ph), n)*k, y, rz*se(Math.cos(ph), n)*k, .5 + se(Math.sin(ph), n)*k*.5, .5 + se(Math.cos(ph), n)*k*.5]; });
+      const base = G.p.length/3; G.p.push(...c.p); G.u.push(...c.u); for (let v = 0; v < c.p.length/3; v++) G.n.push(0, up ? 1 : -1, 0); for (const i of c.i) G.i.push(base + i); };
+    if (caps[0]) add(rows[0], false); if (caps[1]) add(rows[rows.length - 1], true); return G; }
+  const rbox = (w, h, d, b = .01, n = 8) => sweep([[-h/2, w/2 - b, d/2 - b], [-h/2 + b, w/2, d/2], [h/2 - b, w/2, d/2], [h/2, w/2 - b, d/2 - b]], n, 24);
+  const cyl = (r0, r1, h, cols = 12) => sweep([[0, r0, r0], [h, r1, r1]], 2, cols);
+  const plane = (w, h) => grid(1, 1, (a, b) => [(b - .5)*w, (a - .5)*h, 0, b, 1 - a]);          // faces +z, uv canvas-up
+  const flat = (w, d) => grid(1, 1, (a, b) => [(b - .5)*w, 0, (.5 - a)*d, b, a]);                // faces +y
+  // building blocks used by prefabs: P(frame) gives box/rbox/cyl/etc in that frame
+  function P(m) { return {
+    box: (col, w, h, d, x, y, z, o, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), boxG(w, h, d), col, o),
+    rb: (col, w, h, d, x, y, z, o, b = .01, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), rbox(w, h, d, b), col, o),
+    cy: (col, r0, r1, h, x, y, z, o, r = [0, 0, 0], cols = 12) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), cyl(r0, r1, h, cols), col, o),
+    el: (col, rx, ry, rz, x, y, z, o, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), ellip(rx, ry, rz, { rows: 8, cols: 12 }), col, o),
+    pl: (col, w, h, x, y, z, o, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), plane(w, h), col, o),
+    fl: (col, w, d, x, y, z, o, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), flat(w, d), col, o),
+    g: (col, G, x, y, z, o, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), G, col, o),
+    sub: (x, y, z, ry = 0, rx = 0, rz = 0) => P(cmp(m, fr(x, y, z, ry, rx, rz))) }; }
+  /* ---------- painted textures ---------- */
+  let sdI = 77; const rI = () => (sdI = sdI*16807 % 2147483647)/2147483647;
+  const T = {}; const rep = t => { gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT); return t; };
+  T.wood = tex(256, 256, (g, w, h) => { g.fillStyle = "#5a3820"; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(${30 + rI()*30|0},${15 + rI()*12|0},5,${.15 + rI()*.2})`; g.fillRect(0, y + Math.sin(y*.07)*3, w, 1 + rI()*2); }
+    for (let k = 0; k < 5; k++) { g.strokeStyle = "rgba(40,20,8,.35)"; g.beginPath(); g.ellipse(rI()*w, rI()*h, 6 + rI()*10, 2 + rI()*3, 0, 0, 7); g.stroke(); } });
+  T.carpet = tex(256, 256, (g, w, h) => { for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { const v = rI()*14 | 0; g.fillStyle = `rgb(${62 + v},${68 + v},${80 + v})`; g.fillRect(i*64, j*64, 64, 64);
+      for (let k = 0; k < 300; k++) { g.fillStyle = rI() < .5 ? "rgba(0,0,0,.12)" : "rgba(255,255,255,.06)"; g.fillRect(i*64 + rI()*64, j*64 + rI()*64, 2, 1); } if ((i + j) % 2) { g.fillStyle = "rgba(0,0,0,.05)"; for (let y = 0; y < 64; y += 4) g.fillRect(i*64, j*64 + y, 64, 1); } }
+    g.fillStyle = "rgba(0,0,0,.22)"; for (let i = 0; i <= 4; i++) { g.fillRect(i*64 - 1, 0, 2, h); g.fillRect(0, i*64 - 1, w, 2); } });
+  T.stone = tex(256, 256, (g, w, h) => { for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { const v = rI()*10 | 0; g.fillStyle = `rgb(${214 + v},${208 + v},${196 + v})`; g.fillRect(i*128, j*128, 128, 128);
+      g.strokeStyle = "rgba(120,110,95,.25)"; for (let k = 0; k < 4; k++) { g.beginPath(); let x = i*128 + rI()*128, y = j*128; g.moveTo(x, y); for (let s = 0; s < 6; s++) { x += (rI() - .5)*40; y += 22; g.lineTo(x, y); } g.stroke(); } }
+    g.fillStyle = "rgba(90,85,75,.45)"; g.fillRect(127, 0, 2, h); g.fillRect(0, 127, w, 2); });
+  T.wall = tex(128, 128, (g, w, h) => { g.fillStyle = "#d9d4c8"; g.fillRect(0, 0, w, h); for (let k = 0; k < 900; k++) { g.fillStyle = rI() < .5 ? "rgba(0,0,0,.035)" : "rgba(255,255,255,.05)"; g.fillRect(rI()*w, rI()*h, 2, 2); } });
+  T.ceil = tex(128, 128, (g, w, h) => { g.fillStyle = "#e6e3dc"; g.fillRect(0, 0, w, h); for (let k = 0; k < 700; k++) { g.fillStyle = "rgba(90,85,80,.18)"; g.fillRect(rI()*w, rI()*h, 1, 1); } g.fillStyle = "#b8b4ac"; g.fillRect(0, 0, w, 3); g.fillRect(0, 0, 3, h); });
+  T.fabric = tex(128, 128, (g, w, h) => { g.fillStyle = "#ffffff"; g.fillRect(0, 0, w, h); for (let k = 0; k < 2500; k++) { g.fillStyle = rI() < .5 ? "rgba(0,0,0,.08)" : "rgba(255,255,255,.1)"; g.fillRect(rI()*w, rI()*h, 1, 2); } });
+  T.wedge = tex(128, 128, (g, w, h) => { for (let y = 0; y < h; y += 16) for (let x = 0; x < w; x += 16) { const gr = g.createLinearGradient(x, y, x + 16, y + 16); const v = ((x + y)/16) % 2;
+      gr.addColorStop(0, v ? "#ffffff" : "#9a9a9a"); gr.addColorStop(1, v ? "#8a8a8a" : "#e6e6e6"); g.fillStyle = gr; g.fillRect(x, y, 16, 16); } });
+  T.slats = tex(128, 128, (g, w, h) => { g.drawImage((() => { const c = document.createElement("canvas"); c.width = c.height = 4; return c; })(), 0, 0); g.fillStyle = "#6a4426"; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) { g.fillStyle = "#7b5130"; g.fillRect(x, 0, 12, h); g.fillStyle = "rgba(0,0,0,.45)"; g.fillRect(x + 12, 0, 4, h); g.fillStyle = "rgba(255,230,190,.12)"; g.fillRect(x, 0, 2, h); } });
+  T.blinds = tex(128, 256, (g, w, h) => { g.fillStyle = "#cfd3d6"; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 8) { g.fillStyle = "rgba(255,255,255,.6)"; g.fillRect(0, y, w, 3); g.fillStyle = "rgba(0,0,0,.18)"; g.fillRect(0, y + 6, w, 2); }
+    g.fillStyle = "rgba(255,240,200,.25)"; g.fillRect(0, 0, w, h); });
+  const screen = (draw) => tex(256, 192, (g, w, h) => { g.fillStyle = "#0b1a2e"; g.fillRect(0, 0, w, h); draw(g, w, h); for (let y = 0; y < h; y += 3) { g.fillStyle = "rgba(0,0,0,.18)"; g.fillRect(0, y, w, 1); }
+    const gr = g.createRadialGradient(w/2, h/2, 20, w/2, h/2, w*.7); gr.addColorStop(0, "rgba(255,255,255,.06)"); gr.addColorStop(1, "rgba(0,0,0,.45)"); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+  const gnsBug = (g, x, y, s) => { g.fillStyle = "#c8102e"; g.fillRect(x, y, 46*s, 22*s); g.fillStyle = "#ffffff"; g.font = `bold ${17*s}px Arial`; g.textAlign = "left"; g.fillText("GNS", x + 5*s, y + 17*s); };
+  T.scr = [
+    screen((g, w, h) => { g.fillStyle = "#1e4f8c"; g.fillRect(0, 0, w, 26); gnsBug(g, 6, 2, 1); g.fillStyle = "#ffffff"; g.font = "bold 14px Arial"; g.fillText("NEWSROOM — STORY QUEUE", 60, 19);
+      for (let k = 0; k < 8; k++) { g.fillStyle = k === 2 ? "#e9b949" : "#9fb3c8"; g.fillRect(10, 36 + k*18, 140 + (k*37 % 80), 9); g.fillStyle = "#4caf50"; g.fillRect(w - 40, 36 + k*18, 26, 9); } }),
+    screen((g, w, h) => { g.fillStyle = "#c8102e"; g.fillRect(0, h - 40, w, 40); g.fillStyle = "#ffffff"; g.font = "bold 15px Arial"; g.fillText("BREAKING: REYES SURGES IN POLLS", 8, h - 15);
+      g.fillStyle = "#2a3a50"; g.fillRect(20, 20, 110, 100); g.fillStyle = "#d9a07a"; g.beginPath(); g.arc(75, 60, 22, 0, 7); g.fill(); g.fillStyle = "#1d2c52"; g.fillRect(45, 85, 60, 35); gnsBug(g, w - 60, 8, 1); }),
+    screen((g, w, h) => { g.strokeStyle = "#5ad1ff"; g.lineWidth = 2; g.beginPath(); for (let x = 0; x < w; x += 4) g.lineTo(x, h/2 + Math.sin(x*.07)*30*Math.sin(x*.013)); g.stroke(); g.fillStyle = "#9fe3ff"; g.font = "12px monospace"; g.fillText("AUDIO  L  -6dB   R  -7dB", 10, 18); g.fillText("ON AIR  GNS RADIO 88.1", 10, h - 10); }),
+    screen((g, w, h) => { g.fillStyle = "#112233"; g.fillRect(0, 0, w, h); g.fillStyle = "#ccffee"; g.font = "13px monospace"; ["From: B.Turner", "Subj: Tape — mission 4", "Re: Powell fundraiser", "Draft: AP fact-check", "From: R.Ames", "Subj: GNS+ stream"].forEach((t, k) => g.fillText(t, 12, 24 + k*22)); }) ];
+  T.gnsWall = tex(512, 256, (g, w, h) => { g.fillStyle = "#0f2d55"; g.fillRect(0, 0, w, h); const gr = g.createRadialGradient(w/2, h/2, 10, w/2, h/2, w*.6); gr.addColorStop(0, "rgba(80,150,230,.45)"); gr.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.fillStyle = "#c8102e"; g.fillRect(w/2 - 150, 70, 300, 100); g.fillStyle = "#ffffff"; g.font = "bold 86px Arial"; g.textAlign = "center"; g.fillText("GNS", w/2, 150); g.font = "bold 22px Arial"; g.fillText("NEWS · RADIO · GNS+", w/2, 210); });
+  T.console = tex(256, 128, (g, w, h) => { g.fillStyle = "#26282c"; g.fillRect(0, 0, w, h); const C = ["#e05050", "#e0b040", "#50c060", "#4a90e0"];
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 22; c++) { g.fillStyle = (r*7 + c) % 5 === 0 ? C[(r + c) % 4] : "#5a5e66"; g.fillRect(8 + c*11, 10 + r*16, 7, 7); } g.fillStyle = "#111111"; g.fillRect(8, 80, w - 16, 36); for (let c = 0; c < 16; c++) { g.fillStyle = "#777777"; g.fillRect(14 + c*15, 84, 3, 28); g.fillStyle = "#dddddd"; g.fillRect(10 + c*15, 90 + (c*13 % 18), 11, 5); } });
+  T.vent = tex(64, 64, (g, w, h) => { g.fillStyle = "#2c2f33"; g.fillRect(0, 0, w, h); for (let y = 4; y < h; y += 6) { g.fillStyle = "#121314"; g.fillRect(6, y, w - 12, 3); } });
+  T.keys = tex(128, 48, (g, w, h) => { g.fillStyle = "#d8d3c6"; g.fillRect(0, 0, w, h); for (let r = 0; r < 5; r++) for (let c = 0; c < 15; c++) { g.fillStyle = "#f2efe6"; g.fillRect(3 + c*8.3, 3 + r*9, 7, 7); g.fillStyle = "rgba(0,0,0,.25)"; g.fillRect(3 + c*8.3, 9 + r*9, 7, 1); } });
+  T.paper = tex(64, 64, (g, w, h) => { g.fillStyle = "#f4f2ec"; g.fillRect(0, 0, w, h); g.fillStyle = "#99aaaa"; for (let y = 8; y < h - 4; y += 5) g.fillRect(6, y, 30 + rI()*22, 2); });
+  T.nameplate = tex(128, 32, (g, w, h) => { g.fillStyle = "#b8963e"; g.fillRect(0, 0, w, h); g.fillStyle = "#3a2a10"; g.font = "bold 18px Georgia"; g.textAlign = "center"; g.fillText("GNS STUDIOS", w/2, 22); });
+  T.signBen = tex(128, 32, (g, w, h) => { g.fillStyle = "#2b2b2b"; g.fillRect(0, 0, w, h); g.fillStyle = "#e8e4d8"; g.font = "bold 13px Arial"; g.textAlign = "center"; g.fillText("BEN TURNER · VICE CHAIR", w/2, 21); });
+  T.signRich = tex(128, 32, (g, w, h) => { g.fillStyle = "#2b2b2b"; g.fillRect(0, 0, w, h); g.fillStyle = "#e8e4d8"; g.font = "bold 13px Arial"; g.textAlign = "center"; g.fillText("RICHIE · NEWS DIRECTOR", w/2, 21); });
+  T.onair = tex(128, 48, (g, w, h) => { g.fillStyle = "#330000"; g.fillRect(0, 0, w, h); g.fillStyle = "#ff3a30"; g.font = "bold 28px Arial"; g.textAlign = "center"; g.fillText("ON AIR", w/2, 34); });
+  T.exit = tex(128, 48, (g, w, h) => { g.fillStyle = "#00aa44"; g.fillRect(0, 0, w, h); g.fillStyle = "#ffffff"; g.font = "bold 30px Arial"; g.textAlign = "center"; g.fillText("EXIT", w/2, 35); });
+  [T.carpet, T.stone, T.ceil, T.fabric, T.wedge, T.slats, T.wood].forEach(rep);
+  /* ---------- palette ---------- */
+  const WAL = "#5c3a22", WALD = "#3e2614", BRASS = "#b8963e", STEEL = "#1d1f22", LAM = "#a9acae", PLAS = "#c9c2b2", BLK = "#141518", FAB = "#2b2d33", CHROME = "#c9ced5";
+  const W = { tex: T.wood, shine: .45 }, Wd = { tex: T.wood, shine: .35 }, MET = { shine: .85 }, PL = { shine: .25 };
+  /* ================= PREFABS (pivot at floor centre, front = +z, user side = -z) ================= */
+  const OFF = {};
+  // OFF-08 desk telephone 0.22 x 0.11 x 0.20
+  OFF.phone = (p) => { p.rb("#2a2b2e", .22, .045, .2, 0, .0225, 0, PL, .008); p.rb("#2a2b2e", .2, .05, .12, 0, .06, -.03, PL, .01, [-.35, 0, 0]);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) p.box("#d9d6cc", .02, .006, .016, -.03 + c*.026, .05 + r*.005, .045 - r*.022, PL);
+    p.rb("#2a2b2e", .2, .035, .05, 0, .1, -.04, PL, .015); p.box("#7fbf8f", .05, .004, .02, .06, .052, .07, { unlit: true });
+    for (let k = 0; k < 6; k++) p.el("#2a2b2e", .008, .008, .008, .1 + k*.01, .07 - k*.01, -.05, PL); };
+  // OFF-04 CRT computer: tapered shell, recessed screen, stand; tower and keyboard separate
+  OFF.crt = (p, s = 0) => { const sh = sweep([[0, .215, .19], [.05, .215, .19], [.3, .15, .14], [.4, .11, .1]], 6, 20); p.g(PLAS, sh, 0, .3, .03, PL, [-Math.PI/2, 0, 0]);
+    p.rb(PLAS, .43, .36, .05, 0, .3, .055, PL, .015); p.pl("#000000", .35, .27, 0, .31, .081, {}); p.pl("#ffffff", .33, .25, 0, .31, .083, { tex: T.scr[s % T.scr.length], unlit: true });
+    for (let k = 0; k < 4; k++) p.box("#8d877a", .016, .01, .006, .1 + k*.024, .14, .082, PL); p.box("#33ff33", .008, .008, .004, -.17, .14, .082, { unlit: true });
+    for (let k = 0; k < 6; k++) p.box("#8d877a", .2, .006, .01, 0, .2 + k*.03, -.37, PL);
+    p.cy(PLAS, .05, .04, .07, 0, .055, -.05, PL); p.g(PLAS, sweep([[0, .14, .12], [.03, .13, .11], [.05, .1, .09]], 2, 16), 0, .0, -.05, PL); };
+  OFF.tower = (p) => { p.rb(PLAS, .2, .46, .42, 0, .23, 0, PL, .012); p.box("#8d877a", .15, .045, .006, 0, .38, .212, PL); p.box("#8d877a", .15, .045, .006, 0, .32, .212, PL); p.box("#2a2a2a", .1, .008, .006, 0, .25, .212, PL);
+    p.cy("#8d877a", .012, .012, .01, .05, .1, .21, PL, [Math.PI/2, 0, 0]); p.box("#33ff33", .008, .008, .004, -.05, .1, .213, { unlit: true }); for (let k = 0; k < 8; k++) p.box("#6f6a60", .14, .006, .004, 0, .05 + k*.012, -.212, PL); };
+  OFF.keyboard = (p) => { p.rb(PLAS, .45, .025, .16, 0, .016, 0, PL, .006, [.06, 0, 0]); p.fl("#ffffff", .42, .13, 0, .03, 0, { tex: T.keys, shine: .2 }, [.06, 0, 0]); p.rb(PLAS, .06, .02, .1, .3, .012, 0, PL, .01); };
+  // OFF-02 workstation 1.40 x 0.74 x 0.70 : laminate top, two steel T-legs, modesty panel, keyboard tray
+  OFF.workstation = (p, s = 0) => { p.rb(LAM, 1.4, .035, .7, 0, .7225, 0, { shine: .3 }, .012);
+    for (const x of [-.62, .62]) { p.box(STEEL, .06, .68, .06, x, .35, 0, MET); p.box(STEEL, .06, .03, .62, x, .015, 0, MET); p.box(STEEL, .05, .03, .6, x, .69, 0, MET); for (const z of [-.3, .3]) p.cy("#333333", .02, .02, .01, x, 0, z, PL); }
+    p.box(STEEL, 1.18, .35, .02, 0, .52, .32, MET); p.box(STEEL, 1.2, .03, .04, 0, .67, .3, MET);
+    p.box("#3a3d42", .6, .02, .3, 0, .62, -.22, PL); p.box(STEEL, .02, .04, .3, -.3, .64, -.22, MET); p.box(STEEL, .02, .04, .3, .3, .64, -.22, MET);
+    const top = p.sub(0, .74, 0); OFF.crt(top.sub(.15, 0, .1, Math.PI), s); OFF.keyboard(top.sub(.15, 0, -.17, Math.PI)); if (s % 2) OFF.phone(top.sub(-.48, 0, .05, Math.PI + .3));
+    for (let k = 0; k < 2 + s % 3; k++) top.fl("#ffffff", .21, .297, -.4 + k*.02, .002 + k*.002, -.12, { tex: T.paper }, [0, .2*k - .1, 0]);
+    top.cy("#e9e4d8", .04, .035, .1, -.55, 0, -.2, PL); OFF.tower(p.sub(.45, 0, .05, Math.PI)); };
+  // OFF-10 rolling office chair
+  OFF.chair = (p, c = FAB) => { for (let k = 0; k < 5; k++) { const a = k/5*6.283, q = p.sub(0, 0, 0, a); q.box(BLK, .04, .035, .3, 0, .07, .15, PL, [-.08, 0, 0]); q.el(BLK, .025, .025, .025, 0, .028, .29, PL); q.cy("#222222", .006, .006, .05, -.02, .028, .29, PL, [0, 0, Math.PI/2]); }
+    p.cy(BLK, .045, .045, .05, 0, .07, 0, PL); p.cy(CHROME, .022, .022, .3, 0, .1, 0, MET); p.box(BLK, .26, .03, .26, 0, .41, 0, PL);
+    p.rb(c, .5, .08, .48, 0, .46, 0, { tex: T.fabric, shine: .1 }, .03); p.box(BLK, .06, .3, .03, 0, .62, -.25, PL, [-.1, 0, 0]);
+    p.rb(c, .46, .5, .07, 0, .85, -.28, { tex: T.fabric, shine: .1 }, .03, [-.12, 0, 0]);
+    for (const x of [-.27, .27]) { p.box(BLK, .03, .2, .03, x, .52, .02, PL); p.rb(BLK, .06, .03, .24, x, .63, .02, PL, .012); } };
+  // OFF-09 visitor chair: tapered legs, cushion, curved back panel, frame
+  OFF.visitor = (p, col = "#6e5a48") => { for (const [x, z] of [[-.24, .22], [.24, .22], [-.24, -.22], [.24, -.22]]) p.cy(WALD, .02, .014, .42, x, 0, z, W);
+    p.box(WALD, .52, .05, .5, 0, .405, 0, W); p.rb(col, .52, .09, .5, 0, .47, .01, { tex: T.fabric, shine: .1 }, .03);
+    for (const x of [-.24, .24]) p.cy(WALD, .016, .016, .42, x, .43, -.24, W, [-.12, 0, 0]);
+    const back = grid(4, 10, (a, b) => { const x = (b - .5)*.48, y = a*.34, z = -.025*Math.cos((b - .5)*3); return [x, y, z, b, a]; }); p.g(col, back, 0, .55, -.27, { tex: T.fabric, shine: .1 }, [-.12, 0, 0]);
+    p.box(WALD, .5, .04, .03, 0, .88, -.31, W, [-.12, 0, 0]); for (const z of [-.2, .2]) p.box(WALD, .48, .02, .02, 0, .15, z, W); };
+  // OFF-01 executive desk 2.00 x 0.76 x 0.90 : walnut, two pedestals with 3 drawers each, brass pulls, leather blotter, plinth, end panels
+  OFF.exec = (p) => { p.rb(WAL, 2.0, .045, .9, 0, .7375, 0, W, .022);
+    for (const x of [-.74, .74]) { p.box(WALD, .52, .09, .84, x, .045, 0, Wd); p.box(WAL, .52, .62, .86, x, .4, 0, W);
+      for (let k = 0; k < 3; k++) { const y = .2 + k*.19; p.rb(WAL, .46, .17, .02, x, y, -.44, W, .006); p.cy(BRASS, .006, .006, .1, x - .05, y + .02, -.46, MET, [0, 0, Math.PI/2]); for (const dx of [-.05, .05]) p.cy(BRASS, .01, .01, .02, x + dx, y + .02, -.45, MET, [Math.PI/2, 0, 0]); } }
+    p.box(WAL, .96, .5, .03, 0, .44, .41, W); p.box(WAL, .96, .1, .03, 0, .64, -.42, W); p.box("#1d2a22", .8, .006, .5, 0, .763, -.1, { shine: .3 });
+    const top = p.sub(0, .76, 0); OFF.phone(top.sub(.7, 0, -.15, Math.PI - .4)); OFF.crt(top.sub(-.55, 0, .12, Math.PI - .25), 3); OFF.keyboard(top.sub(-.45, 0, -.25, Math.PI - .25));
+    top.box(BRASS, .3, .06, .02, 0, .03, .38, { tex: T.nameplate, shine: .8 }, [-.3, 0, 0]); top.fl("#ffffff", .21, .297, .15, .008, -.1, { tex: T.paper }, [0, .3, 0]);
+    top.cy(BRASS, .07, .06, .02, .5, 0, .25, MET); top.cy(BRASS, .01, .01, .38, .5, .02, .25, MET); top.cy("#2d4b36", .05, .1, .14, .5, .36, .25, { shine: .2 }); };
+  // OFF-05 file cabinet 0.47 x 1.32 x 0.62
+  OFF.file = (p) => { p.rb("#8a8f94", .47, 1.25, .62, 0, .695, 0, { shine: .4 }, .008); p.box("#55595e", .43, .07, .58, 0, .035, 0, PL);
+    for (let k = 0; k < 4; k++) { const y = .23 + k*.29; p.rb("#9aa0a5", .43, .27, .02, 0, y, .315, { shine: .45 }, .006); p.box(CHROME, .16, .02, .03, 0, y + .05, .33, MET); p.box("#f4f1e8", .07, .035, .004, 0, y - .04, .327, PL); p.box(CHROME, .08, .045, .006, 0, y - .04, .325, MET); } };
+  // OFF-06 reception counter 2.80 x 1.12 x 0.72 : faceted curved front with wood slats, projecting stone cap, worktop behind, brass nameplate
+  OFF.reception = (p) => { const N = 6, R = 3.2, span = 2.8; const a0 = -Math.asin(span/2/R), a1 = -a0;
+    for (let k = 0; k < N; k++) { const aa = a0 + (a1 - a0)*(k + .5)/N, x = Math.sin(aa)*R, z = Math.cos(aa)*R - R + .36, w = 2*R*Math.sin((a1 - a0)/N/2) + .01;
+      p.box("#ffffff", w, .98, .05, x, .59, z, { tex: T.slats, shine: .3 }, [0, aa, 0]); p.box("#2a2a2a", w, .12, .04, x, .06, z - .04, PL, [0, aa, 0]);
+      p.rb("#e7e1d3", w + .02, .06, .3, x, 1.11, z - .08, { tex: T.stone, shine: .5 }, .015, [0, aa, 0]); }
+    p.box(WAL, 2.6, .04, .6, 0, .72, -.3, W); for (const x of [-1.25, 1.25]) p.box(WAL, .05, 1.0, .6, x, .54, -.15, W);
+    p.box(BRASS, .7, .14, .01, 0, .78, .4, { tex: T.nameplate, shine: .8 }); const top = p.sub(0, .74, -.3); OFF.crt(top.sub(.6, 0, 0, Math.PI), 0); OFF.phone(top.sub(-.6, 0, 0, Math.PI)); OFF.keyboard(top.sub(.55, 0, -.22, Math.PI)); };
+  // RAD-03 mixing console 0.72 x 0.12 x 0.45 slanted deck, 12 channel strips
+  const RAD = {};
+  RAD.mixer = (p) => { p.box("#232529", .72, .05, .45, 0, .025, 0, PL); const d = p.sub(0, .07, 0, 0, .14); d.box("#2c2f34", .72, .03, .45, 0, 0, 0, PL);
+    const C = ["#c0392b", "#e0a030", "#3a9a50", "#3a70c0"];
+    for (let c = 0; c < 12; c++) { const x = -.32 + c*.052; d.box("#0d0e10", .006, .002, .16, x, .016, .1, PL); d.box("#d9d9d9", .022, .012, .014, x, .022, .06 + (c*29 % 11)*.012, PL);
+      for (const z of [-.08, -.14]) d.cy(C[(c + (z < -.1 ? 1 : 0)) % 4], .009, .008, .016, x, .015, z, PL); d.box(c % 3 ? "#33ff33" : "#ff3333", .006, .004, .006, x, .017, -.19, { unlit: true }); }
+    for (const x of [.3, .33]) d.box("#f2f2f2", .022, .014, .016, x, .022, .08, PL); d.box("#33aa66", .1, .004, .05, .29, .017, -.15, { unlit: true }); d.cy("#888888", .006, .006, .02, .33, .0, -.2, MET, [Math.PI/2, 0, 0]); };
+  // RAD-02 microphone boom: clamp, three tubes, two pivot joints with springs, mic with foam grille and shock mount
+  RAD.boom = (p, ry = 0) => { const q = p.sub(0, 0, 0, ry); q.box(BLK, .05, .08, .06, 0, -.03, 0, PL); q.cy(BLK, .012, .012, .18, 0, 0, 0, MET);
+    const j1 = q.sub(0, .18, 0, 0, -.9); j1.el(BLK, .02, .02, .02, 0, 0, 0, MET); j1.cy(BLK, .008, .008, .32, 0, 0, 0, MET); j1.cy(CHROME, .005, .005, .26, .018, .02, 0, MET);
+    const j2 = j1.sub(0, .32, 0, 0, 1.6); j2.el(BLK, .018, .018, .018, 0, 0, 0, MET); j2.cy(BLK, .008, .008, .3, 0, 0, 0, MET); j2.cy(CHROME, .005, .005, .24, .016, .03, 0, MET);
+    const m = j2.sub(0, .3, 0, 0, -.6); m.cy(BLK, .006, .006, .05, 0, 0, 0, MET); m.cy("#2a2a2a", .03, .03, .006, 0, .05, 0, MET); m.cy("#3a3a3a", .0225, .0225, .17, 0, .02, 0, MET); m.el("#59595c", .028, .05, .028, 0, .2, 0, { tex: T.fabric, shine: .05 }); };
+  // RAD-05 studio headphones
+  RAD.phones = (p) => { for (let k = 0; k < 7; k++) { const a = -1.3 + k*2.6/6; p.box("#111111", .025, .012, .045, Math.sin(a)*.09, .1 + Math.cos(a)*.09, 0, PL, [0, 0, -a]); }
+    for (const s of [-1, 1]) { p.el("#1b1b1b", .022, .05, .04, s*.1, .03, 0, PL); p.el("#3a2a22", .012, .04, .032, s*.08, .03, 0, PL); p.box(CHROME, .006, .05, .01, s*.1, .08, 0, MET); } };
+  // RAD-04 acoustic wall panel 1.20 x 0.60 x 0.08 (framed fabric with wedge profile)
+  RAD.panel = (p, col = "#5a1e26") => { p.box("#1a1a1a", 1.2, .6, .03, 0, 0, .015, PL); p.box(col, 1.15, .55, .05, 0, 0, .05, { tex: T.wedge, shine: .05 }); };
+  // RAD-01 broadcast desk 2.50 x 0.77 x 1.05 crescent, mic mounts, console well, rack cabinets, privacy screen
+  RAD.desk = (p) => { const R0 = 1.25, R1 = 2.3, a0 = -.58, a1 = .58, seg = 18, slab = (y0, y1, col, o, r0 = R0, r1 = R1) => { const G = grid(1, seg, (a, b, r) => { const ang = a0 + (a1 - a0)*b, rr = r ? r1 : r0; return [Math.sin(ang)*rr, 0, Math.cos(ang)*rr - R1 + .5, b, r]; });
+      p.g(col, G, 0, y1, 0, o); p.g(col, G, 0, y0, 0, o, [Math.PI, 0, 0]); for (const rr of [r0, r1]) p.g(col, grid(1, seg, (a, b, r) => { const ang = a0 + (a1 - a0)*b; return [Math.sin(ang)*rr, r ? y1 : y0, Math.cos(ang)*rr - R1 + .5, b, r]; }), 0, 0, 0, o); };
+    slab(.73, .77, WAL, W); slab(.08, .7, "#3a3d42", { shine: .3 }, R0 + .1, R1 - .15); slab(0, .08, "#1a1a1a", PL, R0 + .14, R1 - .19);
+    for (let k = 0; k < 3; k++) { const ang = a0 + (a1 - a0)*(k + .5)/3, x = Math.sin(ang)*(R1 - .14), z = Math.cos(ang)*(R1 - .14) - R1 + .5; p.pl("#ffffff", .5, .45, x, .38, z + .002, { tex: T.vent, shine: .3 }, [0, ang, 0]); }
+    RAD.mixer(p.sub(0, .77, -.08, Math.PI)); for (const [x, ry] of [[-.75, .5], [.75, -.5], [0, 0]]) { RAD.boom(p.sub(x, .8, x ? .0 : -.25, 0), ry + Math.PI); }
+    for (const x of [-.75, .75, 0]) RAD.phones(p.sub(x*.8, .77, .25 - Math.abs(x)*.2, .2));
+    p.box("#2a2c30", 2.4, .9, .06, 0, 1.2, .6, PL); p.box("#4a1a20", 2.3, .8, .02, 0, 1.2, .565, { tex: T.wedge, shine: .05 }); };
+  // TV-04 control console 2.20 x 0.95 x 0.90
+  const TV = {};
+  TV.console = (p) => { p.box("#2a2c30", 2.2, .7, .7, 0, .35, .1, { shine: .3 }); for (let k = 0; k < 4; k++) { p.pl("#ffffff", .5, .55, -.81 + k*.54, .33, .451, { tex: T.vent }); p.box(CHROME, .02, .1, .02, -.6 + k*.54, .4, .465, MET); }
+    const s = p.sub(0, .74, -.05, 0, .18); s.box("#202226", 2.2, .04, .62, 0, 0, 0, PL); s.fl("#ffffff", 2.1, .55, 0, .022, 0, { tex: T.console, shine: .2 });
+    for (let k = 0; k < 3; k++) { const m = p.sub(-.7 + k*.7, .78, .38, 0, -.12); m.rb("#1a1b1e", .62, .44, .08, 0, .26, 0, PL, .01); m.pl("#ffffff", .56, .38, 0, .26, -.045, { tex: T.scr[(k + 1) % 4], unlit: true }, [0, Math.PI, 0]); m.box("#1a1b1e", .1, .06, .1, 0, .02, 0, PL); }
+    for (let k = 0; k < 6; k++) p.box(k % 2 ? "#ff3333" : "#33ff33", .02, .015, .01, -.9 + k*.36, 1.36, .4, { unlit: true }); };
+  // TV-05 video wall 4.80 x 2.70 x 0.22 (3 x 2 framed tiles)
+  TV.wall = (p) => { for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) { const x = -1.6 + c*1.6, y = .7 + r*.9; p.box("#0e0f11", 1.58, .88, .1, x, y, 0, PL); p.pl("#ffffff", 1.53, .83, x, y, .051, { tex: T.scr[(r*3 + c) % 4], unlit: true }); }
+    for (const x of [-1.6, 1.6]) p.box("#2a2a2a", .1, 1.8, .1, x, 1.15, -.1, MET); };
+  /* ================= ARCHITECTURE (local coords; door/window openings are real gaps) ================= */
+  const SOLID = [], WALLS = [], H = 3.4, root = P(fr(IO[0], 0, IO[2]));
+  const solW = (x0, z0, x1, z1) => { sol(x0, z0, x1, z1); WALLS.push(SOLID[SOLID.length - 1]); };
+  const sol = (x0, z0, x1, z1) => SOLID.push([IO[0] + Math.min(x0, x1), IO[2] + Math.min(z0, z1), IO[0] + Math.max(x0, x1), IO[2] + Math.max(z0, z1)]);
+  // wall along x (z fixed) or along z (x fixed); ops = [[centre, width, height, kind]]
+  function wall(ax, a0, a1, c, th, ops = [], skin = [T.wall, T.wall]) { ops = ops.slice().sort((a, b) => a[0] - b[0]); let s = a0; const segs = [];
+    for (const [oc, ow] of ops) { segs.push([s, oc - ow/2]); s = oc + ow/2; } segs.push([s, a1]);
+    const B = (u0, u1, y0, y1) => { const L = u1 - u0, m = (u0 + u1)/2; if (L < .01) return; if (ax === "x") root.box("#ffffff", L, y1 - y0, th, m, (y0 + y1)/2, c, { tex: skin[0], shine: .05 }); else root.box("#ffffff", th, y1 - y0, L, c, (y0 + y1)/2, m, { tex: skin[0], shine: .05 }); };
+    for (const [u0, u1] of segs) { B(u0, u1, 0, H); if (ax === "x") solW(u0, c - th/2, u1, c + th/2); else solW(c - th/2, u0, c + th/2, u1);
+      for (const sd of [-1, 1]) { const L = u1 - u0, m = (u0 + u1)/2; if (L < .05) continue; if (ax === "x") root.box("#3b3530", L, .12, .025, m, .06, c + sd*(th/2 + .0125), PL); else root.box("#3b3530", .025, .12, L, c + sd*(th/2 + .0125), .06, m, PL); } }
+    for (const [oc, ow, oh, kind] of ops) { B(oc - ow/2, oc + ow/2, oh, H);
+      // casing (architrave) around each opening, both faces
+      for (const sd of [-1, 1]) { const o = sd*(th/2 + .01); const cas = (w, h, d, x, y, z) => ax === "x" ? root.box("#e9e5dc", w, h, d, x, y, z, { shine: .3 }) : root.box("#e9e5dc", d, h, w, z, y, x, { shine: .3 });
+        cas(.08, oh, .02, oc - ow/2 - .04, oh/2, c + o); cas(.08, oh, .02, oc + ow/2 + .04, oh/2, c + o); cas(ow + .16, .08, .02, oc, oh + .04, c + o); }
+      if (kind === "door") { // 1.0 x 2.2 leaf on 3 hinges, swung open 100 degrees
+        const hx = oc - ow/2 + .02, leaf = ax === "x" ? root.sub(hx, 0, c, -1.75) : root.sub(c, 0, hx, Math.PI/2 - 1.75);
+        leaf.box("#8a6a4a", ow - .04, 2.18, .045, (ow - .04)/2, 1.09, 0, { tex: T.wood, shine: .3 }); for (const y of [.25, 1.1, 1.95]) leaf.box(CHROME, .02, .1, .05, .005, y, 0, MET);
+        for (const sd of [-1, 1]) { leaf.cy(CHROME, .025, .025, .03, ow - .14, 1.0, sd*.03, MET, [sd*Math.PI/2, 0, 0]); leaf.box(CHROME, .1, .018, .018, ow - .19, 1.0, sd*.05, MET); } }
+      if (kind === "glass") { // glazed double door: frames + glass, both leaves open
+        for (const sd of [-1, 1]) { const hx = oc + sd*(ow/2 - .02), leaf = ax === "x" ? root.sub(hx, 0, c, sd < 0 ? -1.6 : 1.6 + Math.PI) : root.sub(c, 0, hx, Math.PI/2 + (sd < 0 ? -1.6 : 1.6 + Math.PI));
+          const lw = ow/2 - .04; leaf.box("#2b2d30", lw, .08, .05, lw/2, .04, 0, MET); leaf.box("#2b2d30", lw, .08, .05, lw/2, 2.16, 0, MET); leaf.box("#2b2d30", .06, 2.2, .05, .03, 1.1, 0, MET); leaf.box("#2b2d30", .06, 2.2, .05, lw - .03, 1.1, 0, MET);
+          leaf.box("#5f7f8f", lw - .1, 2.04, .012, lw/2, 1.1, 0, { shine: 1 }); leaf.box(CHROME, .03, .7, .03, lw - .12, 1.1, .05, MET); } }
+      if (kind === "window") { const y0 = .9; if (ax === "x") { root.box("#ffffff", ow, y0, th, oc, y0/2, c, { tex: skin[0], shine: .05 }); root.box("#e9e5dc", ow + .1, .03, th + .12, oc, y0, c, { shine: .3 }); root.pl("#bbccdd", ow, oh - y0, oc, (oh + y0)/2, c, { shine: 1 }); }
+        else { root.box("#ffffff", th, y0, ow, c, y0/2, oc, { tex: skin[0], shine: .05 }); root.box("#e9e5dc", th + .12, .03, ow + .1, c, y0, oc, { shine: .3 }); root.pl("#9ab4c4", ow, oh - y0, c, (oh + y0)/2, oc, { shine: 1 }, [0, Math.PI/2, 0]); }
+        if (ax === "x") sol(oc - ow/2, c - th/2, oc + ow/2, c + th/2); else sol(c - th/2, oc - ow/2, c + th/2, oc + ow/2); } } }
+  // floors (carpet tile 0.6 m, stone in the lobby, dark studio carpet) and ceiling (0.6 m acoustic tiles with troffers)
+  const floor = (x0, z0, x1, z1, t, col = "#ffffff") => root.g(col, grid(1, 1, (a, b) => [x0 + (x1 - x0)*b, 0, z1 - (z1 - z0)*a, (x1 - x0)*b/2.4, (z1 - (z1 - z0)*a)/2.4]), 0, .001, 0, { tex: t, shine: t === T.stone ? .6 : .05 });
+  floor(5, 0, 13, 4, T.stone); floor(0, 0, 5, 4, T.carpet); floor(13, 0, 18, 4, T.carpet); floor(0, 4, 11, 12, T.carpet); floor(11, 4, 18, 12, T.carpet, "#7a6f80");
+  root.g("#ffffff", grid(1, 1, (a, b) => [18*b, 0, 12*a, 18*b/1.2, 12*a/1.2]), 0, H, 0, { tex: T.ceil, shine: 0 });
+  for (let x = 1.5; x < 18; x += 3) for (let z = 2; z < 12; z += 3) { root.box("#d8d8d2", 1.22, .1, .62, x, H - .05, z, PL); root.fl("#fffbea", 1.1, .5, x, H - .101, z, { unlit: true }, [Math.PI, 0, 0]); for (let k = 0; k < 4; k++) root.box("#c8c8c2", .02, .02, .5, x - .45 + k*.3, H - .11, z, PL); }
+  // outer shell: street wall (z=0) with glass doors + blinds windows, side and back walls
+  wall("x", 0, 18, -.1, .2, [[9, 1.8, 2.3, "glass"], [2.5, 1.6, 2.5, "window"], [15.5, 1.6, 2.5, "window"], [6.2, 1.2, 2.5, "window"], [11.8, 1.2, 2.5, "window"]]);
+  for (const x of [2.5, 15.5, 6.2, 11.8]) root.pl("#ffffff", x === 6.2 || x === 11.8 ? 1.2 : 1.6, 1.6, x, 1.7, .005, { tex: T.blinds, shine: .1 });
+  wall("x", -.2, 18.2, 12.1, .2); wall("z", -.2, 12.2, -.1, .2); wall("z", -.2, 12.2, 18.1, .2);
+  // partitions: lobby/newsroom (z=4), offices, control & radio
+  wall("x", 0, 18, 4, .15, [[2.5, 1.0, 2.2, "door"], [9, 2.4, 2.3, "glass"]]);
+  wall("z", 0, 4, 5, .15); wall("z", 0, 4, 13, .15, [[2.6, 1.0, 2.2, "door"]]);
+  wall("z", 4, 12, 11, .15, [[5.4, 1.0, 2.2, "door"], [10.6, 1.0, 2.2, "door"]]);
+  wall("x", 11, 18, 7.6, .15, [[15, 2.6, 2.2, "window"]]);
+  /* ================= ROOMS: placement inventory per the atlas ================= */
+  const place = (fn, x, z, ry = 0, fp = null, ...args) => { fn(root.sub(x, 0, z, ry), ...args); if (fp) { const c = Math.abs(Math.cos(ry)), s = Math.abs(Math.sin(ry)), hw = (fp[0]*c + fp[1]*s)/2, hd = (fp[0]*s + fp[1]*c)/2; sol(x - hw, z - hd, x + hw, z + hd); } };
+  // Lobby (5..13 x 0..4): reception counter facing the street door, 3 visitor chairs, GNS logo wall, plants
+  place(OFF.reception, 9, 2.7, Math.PI, [2.9, 1.0]); root.box("#0f2d55", 5.5, 2.4, .04, 9, 1.75, 3.9, PL); root.pl("#ffffff", 3.6, 1.8, 9, 1.9, 3.87, { tex: T.gnsWall, unlit: true }, [0, Math.PI, 0]);
+  for (let k = 0; k < 3; k++) place(OFF.visitor, 5.55, 1.0 + k*.8, Math.PI/2, [.6, .6]);
+  for (const x of [5.5, 12.5]) { root.cy("#3a3a3a", .22, .18, .45, x, 0, 3.55, PL); root.el("#2f5a2f", .35, .55, .35, x, .95, 3.55, { shine: .1 }); }
+  root.pl("#ffffff", .6, .22, 9, 2.45, .12, { tex: T.exit, unlit: true });
+  // Ben Turner's office (0..5 x 0..4) and Richie's office (13..18 x 0..4): OFF-01, OFF-09 x2 each, file cabinet, rug, framed photo
+  for (const [cx, sign] of [[2.5, T.signBen], [15.5, T.signRich]]) { place(OFF.exec, cx, 2.6, Math.PI, [2.05, .95]); place(OFF.chair, cx, 3.3, Math.PI, null, "#3b2a22");
+    place(OFF.visitor, cx - .5, 1.4, 0, [.6, .6], "#4a5a6e"); place(OFF.visitor, cx + .5, 1.4, 0, [.6, .6], "#4a5a6e"); place(OFF.file, cx + (cx < 9 ? -2.1 : 2.1), 3.5, Math.PI, [.5, .65]);
+    root.fl("#6a2a2a", 3, 2, cx, .006, 1.9, { tex: T.fabric, shine: 0 }); root.box("#3a2a1a", .9, .6, .03, cx, 1.9, 3.91, W); root.pl("#ffffff", .8, .5, cx, 1.9, 3.89, { tex: T.scr[1] }, [0, Math.PI, 0]); }
+  root.pl("#ffffff", .9, .22, 2.5, 2.45, 4.09, { tex: T.signBen }); root.pl("#ffffff", .9, .22, 13.09, 2.45, 2.6, { tex: T.signRich }, [0, -Math.PI/2, 0]);
+  // Newsroom (0..11 x 4..12): 10 workstations + 10 chairs + 10 CRTs, 4 file cabinets, video wall
+  let s = 0; for (const z of [6.9, 9.9]) for (let k = 0; k < 5; k++) { const x = 1.0 + k*1.5; place(OFF.workstation, x, z, Math.PI, [1.42, .72], s); place(OFF.chair, x, z + .75, Math.PI + (s % 3 - 1)*.25); s++; }
+  for (let k = 0; k < 4; k++) place(OFF.file, .45, 4.6 + k*.5 + (k > 1 ? 4 : 0) - (k > 1 ? 1 : 0), Math.PI/2, [.65, .5]);
+  TV.wall(root.sub(5.5, .2, 11.85, Math.PI)); sol(3, 11.7, 8, 12);
+  root.pl("#ffffff", .7, .26, 10.6, 2.55, 7.6 + 3.0, { tex: T.onair, unlit: true }, [0, -Math.PI/2, 0]);
+  // Control room (11..18 x 4..7.6): TV-04 console facing the radio-booth window
+  place(TV.console, 15, 6.5, Math.PI, [2.25, .95]); place(OFF.chair, 14.3, 5.6, Math.PI); place(OFF.chair, 15.7, 5.6, Math.PI);
+  for (let k = 0; k < 3; k++) RAD.panel(root.sub(18 - .02, 1.6 + (k % 2)*.7, 4.8 + k*.95, -Math.PI/2), "#2a2c30");
+  // Radio booth (11..18 x 7.6..12): RAD-01 desk, 3 booms + headphones on the desk, 12 acoustic panels (staggered), ON AIR light
+  place(RAD.desk, 14.6, 10.2, Math.PI, [2.6, 1.2]); for (const [x, z, ry] of [[13.6, 11.2, Math.PI], [15.6, 11.2, Math.PI], [14.6, 9.0, 0]]) place(OFF.chair, x, z, ry);
+  for (let k = 0; k < 12; k++) { const onBack = k < 6, x = onBack ? 11.9 + (k % 3)*1.35 + (k > 2 ? .6 : 0) : 17.98, z = onBack ? 11.98 : 8.3 + ((k - 6) % 3)*1.2, y = 1.3 + (onBack ? (k > 2 ? .75 : 0) : (k > 8 ? .75 : 0));
+    RAD.panel(root.sub(x, y, z, onBack ? Math.PI : -Math.PI/2), k % 2 ? "#5a1e26" : "#2a2c30"); }
+  root.pl("#ffffff", .5, .18, 11.08, 2.5, 10.6, { tex: T.onair, unlit: true }, [0, Math.PI/2, 0]);
+  /* ---------- upload batches as engine meshes ---------- */
+  const node0 = node([0, 0, 0]); for (const k in BATCH) { const B = BATCH[k]; for (const part of B.parts) { const m = mesh(part, B.col, { tex: B.o.tex, shine: B.o.shine != null ? B.o.shine : .05, unlit: B.o.unlit, cut: B.o.cut }); m.flat = 0; node0.meshes.push(m); } }
+  computeWorld(node0, ident());
+  for (const k in BATCH) delete BATCH[k];
+  const at = (x, z) => [IO[0] + x, IO[2] + z];
+  return { root: node0, SOLID, WALLS, H, name: "GNS Studios", spawn: at(9, 1.1), spawnH: 0, exit: at(9, -.05), drawCalls: node0.meshes.length,
+    inBounds: (x, z) => x > IO[0] - 2 && x < IO[0] + 20 && z > IO[2] - 2 && z < IO[2] + 14 }; })();
 
 /* ---------- game: walk the Finance District ---------- */
 let W = 0, H = 0; const PHONE = matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 820;
@@ -1549,7 +1825,7 @@ const up_ = e => { if (e.pointerId === stick.id) { stick.id = null; stick.x = st
 canvas.addEventListener("pointerup", up_); canvas.addEventListener("pointercancel", up_);
 canvas.addEventListener("wheel", e => { e.preventDefault(); camDist = Math.max(2.2, Math.min(14, camDist*(1 + e.deltaY*.001))); }, { passive: false });
 const inBox = (x, z, b, r) => x > b[0] - r && x < b[2] + r && z > b[1] - r && z < b[3] + r;
-function blocked(x, z) { for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const c of allCars()) if (!(pl.inCar && c === myCar) && carHit(c, x, z, .2)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (!n.down && Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; const E = CITY.EDGE - .4; return x < L.roads[0][0] - E || x > L.roads[L.roads.length - 1][1] + E || z < Z.roads[0][0] - E || z > Z.roads[Z.roads.length - 1][1] + E; }
+function blocked(x, z) { if (inside) { for (const b of INTERIOR.SOLID) if (inBox(x, z, b, .25)) return true; return false; } for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const c of allCars()) if (!(pl.inCar && c === myCar) && carHit(c, x, z, .2)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (!n.down && Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; const E = CITY.EDGE - .4; return x < L.roads[0][0] - E || x > L.roads[L.roads.length - 1][1] + E || z < Z.roads[0][0] - E || z > Z.roads[Z.roads.length - 1][1] + E; }
 gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
 let last = 0; const label = document.getElementById("where");
 pl.inCar = false;
@@ -1700,7 +1976,17 @@ function simStep(dt, t) { simT = t; crashCd -= dt;
 // punches knock pedestrians down
 function punchHit() { for (const n of NPCS.concat(COPS)) if (n.h && !n.down && !n.inCar) { const dx = n.x - pl.x, dz = n.z - pl.z, d = Math.hypot(dx, dz); if (d < 1.3 && (dx*Math.sin(pl.h) + dz*Math.cos(pl.h)) > .3*d) { knockPed(n, dx, dz, true); if (n.veh && !wanted) addWanted(1); return; } } }
 drawHud();
-window.__av = { pl, G: () => CITY.GARAGE, VEH, COPS, get my() { return myCar; }, addWanted, get wanted() { return wanted; }, hp, TREES, NPCS, pick, HL, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; }, L: [CITY.LX, CITY.LZ], get fn() { return frameNo; } };
+window.__av = { pl, G: () => CITY.GARAGE, VEH, COPS, get my() { return myCar; }, addWanted, get wanted() { return wanted; }, hp, TREES, NPCS, pick, HL, enter: () => enterBuilding(CITY.DOORS.find(d => d.id === "gns")), get inside() { return !!inside; }, DOORS: CITY.DOORS, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; }, L: [CITY.LX, CITY.LZ], get fn() { return frameNo; } };
+// ---- entering buildings: walk into the door marker, fade to black, spawn inside ----
+let inside = null, fading = false, doorMsgT = 0; const fadeE = document.createElement("div");
+fadeE.style.cssText = "position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .35s;z-index:6"; document.body.appendChild(fadeE);
+function fadeTo(fn) { if (fading) return; fading = true; fadeE.style.opacity = "1"; setTimeout(() => { fn(); pl.sp = 0; setTimeout(() => { fadeE.style.opacity = "0"; fading = false; }, 250); }, 380); }
+function enterBuilding(d) { fadeTo(() => { inside = { door: d }; const [x, z] = INTERIOR.spawn; pl.x = x; pl.z = z; pl.y = 0; pl.h = 0; camYaw = Math.PI; camPitch = .22; }); }
+function leaveBuilding() { const d = inside.door; fadeTo(() => { inside = null; pl.x = d.x + d.fx*1.6; pl.z = d.z + d.fz*1.6; pl.h = Math.atan2(d.fx, d.fz); camYaw = pl.h + Math.PI; camPitch = .25; }); }
+function doorCheck(t) { if (fading || pl.inCar || wastedT) return;
+  if (inside) { const [ex, ez] = INTERIOR.exit; if (Math.hypot(pl.x - ex, pl.z - ez) < .7) leaveBuilding(); return; }
+  for (const d of CITY.DOORS) if (Math.hypot(pl.x - d.x, pl.z - d.z) < 1.0) { if (d.id === "gns") { if (wanted) { if (t > doorMsgT) { label.textContent = "Lose the cops first"; doorMsgT = t + 2; } } else enterBuilding(d); }
+    else if (t > doorMsgT) { label.textContent = d.id === "ap" ? "AP Tower — locked (interior coming soon)" : "Powell campaign HQ — locked (interior coming soon)"; doorMsgT = t + 2.5; } } }
 function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); last = t;
   night += (nightT - night)*.06;
   // input -> camera-relative movement
@@ -1714,7 +2000,7 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   if (ml > .05 && !punching) { const want = Math.atan2(mx, mz); let d = want - pl.h; d = Math.atan2(Math.sin(d), Math.cos(d)); pl.h += d*Math.min(1, dt*10); }
   const nx = pl.x + Math.sin(pl.h)*pl.sp*dt, nz = pl.z + Math.cos(pl.h)*pl.sp*dt;
   if (!blocked(nx, pl.z)) pl.x = nx; if (!blocked(pl.x, nz)) pl.z = nz;
-  pl.y += (CITY.groundY(pl.x, pl.z) - pl.y)*Math.min(1, dt*14);
+  pl.y += ((inside ? 0 : CITY.groundY(pl.x, pl.z)) - pl.y)*Math.min(1, dt*14); doorCheck(t);
   if (pl.inCar && !wastedT) { myCar.drive(dt, Math.max(-1, Math.min(1, cIz)), Math.max(-1, Math.min(1, cIx)), !!keys.Space, carHitFn); pl.x = myCar.x; pl.z = myCar.z; pl.y = myCar.y; pl.sp = 0; }
   else if (myCar) myCar.drive(dt, 0, 0, true, carHitFn);
   if (pl.inCar && wastedT) myCar.drive(dt, 0, 0, true, carHitFn);
@@ -1726,8 +2012,9 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   if (!pl.inCar && !camDrag && pl.sp > .3) { let d = (pl.h + Math.PI) - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d*Math.min(1, dt*1.2); }
   let tgt = [pl.x, pl.y + (pl.inCar ? 1.7 : 1.55), pl.z], camD = pl.inCar ? Math.max(camDist, 8.5) : camDist; let cd = camD;
   if (preview) { if (!camDrag) camYaw += dt*.35; tgt = [preview.x, PHONE ? -.6 : .8, preview.z]; camD = cd = 7.2; }
-  for (let k = .5; k <= camD && !preview; k += .25) { const x = tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*k, z = tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*k; if (CITY.SOLID.some(b => inBox(x, z, b, .25))) { cd = Math.max(.6, k - .3); break; } }
-  const eye = [tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*cd, Math.max(pl.y + .4, tgt[1] + Math.sin(camPitch)*cd), tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*cd];
+  for (let k = .5; k <= camD && !preview; k += .25) { const x = tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*k, z = tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*k; if ((inside ? INTERIOR.WALLS : CITY.SOLID).some(b => inBox(x, z, b, .25))) { cd = Math.max(.6, k - .3); break; } }
+  if (inside) cd = Math.min(cd, 3.6);
+  const eye = [tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*cd, Math.max(pl.y + .4, tgt[1] + Math.sin(camPitch)*cd), tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*cd]; if (inside) eye[1] = Math.min(eye[1], INTERIOR.H - .2);
   const VP = mul(persp(55*Math.PI/180, W/H, .1, 1600), lookAt(eye, tgt));
   const n = night;
   // animate everyone first (the shadow pass needs their poses)
@@ -1738,20 +2025,20 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   frameNo++; if (frameNo > 3 && frameNo % 3 === 0) { const nb = NPCS.find(q => !q.h); if (nb) buildNPC(nb); }
   for (const nn of NPCS.concat(COPS)) { if (nn.veh === undefined) { if (!nn.down) updateNPC(nn, dt); } if (!nn.h || nn.inCar) continue; const dx = nn.x - eye[0], dz = nn.z - eye[2], dd = Math.hypot(dx, dz); nn.vis = dd < 70 && !(dd > 4 && (dx*fx2 + dz*fz2) < 0);
     if (!nn.vis) continue; const far = PHONE && dd > 28 && (frameNo + nn.off*7 | 0) % 3; if (!far) { pose(t + nn.off, nn.P, nn.down ? "Idle" : nn.move, nn.t0); if (nn.P.flash) nn.P.flash.visible = nn.flashT > t; nn.h.t = [nn.x, nn.y + (nn.down ? .12 : 0), nn.z]; nn.h.r[1] = nn.down ? nn.fdir : nn.hd; nn.h.r[0] = nn.down ? Math.min(1.45, (t - nn.downT)*6) : 0; computeWorld(nn.h, ident()); setS(nn.h); nn.skins.forEach(updateSkin); } live.push({ h: nn.h, sks: nn.skins, nn }); }
-  let LVP = null; if (SH && n < .98) LVP = SH.render(pl.x, pl.z, live.filter(c => !c.car || c.near));
+  if (inside) live.push({ h: INTERIOR.root, sks: [], car: true });
+  let LVP = null; if (SH && n < .98 && !inside) LVP = SH.render(pl.x, pl.z, live.filter(c => !c.car || c.near));
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  SKY.draw(VP, eye, n);
-  CITY.shadow(LVP || ident(), LVP ? 1 : 0);
-  CITY.draw(VP, eye, n, t); TREES.draw(VP, eye, tgt, n, t);
+  if (inside) { gl.clearColor(.05, .05, .06, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+  else { SKY.draw(VP, eye, n); CITY.shadow(LVP || ident(), LVP ? 1 : 0); CITY.draw(VP, eye, n, t); TREES.draw(VP, eye, tgt, n, t); }
   gl.useProgram(prog); [A.P, A.N, A.U].forEach(a => gl.enableVertexAttribArray(a)); gl.uniform1i(U.uT, 0); gl.uniform1f(dimLoc, 1 - .62*n);
-  gl.uniformMatrix4fv(CU("uShVP"), false, LVP || ident()); gl.uniform1f(CU("uShOn"), LVP ? 1 : 0); gl.uniform1i(CU("uShTex"), 2); gl.uniform3fv(CU("uSunD"), SUND); gl.uniform1f(CU("uNightC"), n);
+  gl.uniformMatrix4fv(CU("uShVP"), false, LVP || ident()); gl.uniform1f(CU("uShOn"), LVP ? 1 : 0); gl.uniform1i(CU("uShTex"), 2); gl.uniform3fv(CU("uSunD"), inside ? [.28, .9, .33] : SUND); gl.uniform1f(CU("uNightC"), inside ? 0 : n); if (inside) gl.uniform1f(dimLoc, 1);
   gl.uniformMatrix4fv(U.uVP, false, VP); gl.uniform3fv(U.uEye, eye);
   for (const c of live) { const h = c.h; if (c.car) { drawTree(h); continue; } shadowN.t = [h.t[0], h.t[1] + .02, h.t[2]]; computeWorld(shadowN, ident());
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); drawTree(shadowN); gl.disable(gl.BLEND); gl.depthMask(true);
     drawTree(h); const I = ident(); for (const m of c.sks) drawMesh(m, I); }
   [A.P, A.N, A.U].forEach(a => gl.disableVertexAttribArray(a));
   if (actB) { const k = actState(); actB.hidden = !k; if (k) actB.textContent = { get: "Choose a car (E)", enter: "Get in (E)", exit: "Get out (E)", jack: "Steal car (E)" }[k]; }
-  if (((t*4)|0) % 2 === 0) label.textContent = streetName(pl.x, pl.z);
+  if (((t*4)|0) % 2 === 0 && t > doorMsgT) label.textContent = inside ? INTERIOR.name : streetName(pl.x, pl.z);
   requestAnimationFrame(frame); }
 function drawMesh(g, M) {
   gl.uniformMatrix4fv(U.uM, false, M); gl.uniform3fv(U.uC, g.color); gl.uniform1f(U.uShine, g.shine); gl.uniform1f(U.uUnlit, g.unlit ? 1 : 0); gl.uniform1f(U.uCut, g.cut ? 1 : 0); gl.uniform1f(U.uFlat, g.flat);

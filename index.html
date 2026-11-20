@@ -753,6 +753,7 @@ const shadowN = node([0, .002, 0]); add(shadowN, grid(1, 1, (a, b) => [(b-.5)*.9
 /* ---------- animation ---------- */
 const lerp = (a, b, k) => a + (b - a)*k;
 const set = (n, i, v, k = .2) => { n.r[i] = lerp(n.r[i], v, k); };
+const SIT = { h: -1.45, k: 1.5, a: .05, y: .52 };
 function pose(t, P, move, t0) {
   const s = t - t0;
   let sL = .03, sR = .03, sLz = 0, sRz = 0, eL = -.15, eR = -.15, hL = 0, hR = 0, kL = 0, kR = 0, aL = 0, aR = 0, bob = 0, lean = 0, headY = 0, headX = 0, twist = 0, fL = .5, fR = .5;
@@ -769,6 +770,7 @@ function pose(t, P, move, t0) {
     [sR, yR, sRz, eR, aimT, wxR] = [aimSol.R[0] + br, aimSol.R[1] + sway, aimSol.R[2], aimSol.R[3], aimSol.R[4], aimSol.R[5]]; [sL, yL, sLz, eL, twL, wxL] = [aimSol.L[0] + br, aimSol.L[1] + sway, aimSol.L[2], aimSol.L[3], aimSol.L[4], aimSol.L[5]];
     sRz += .08; sLz -= .08;   // the shoulder joints add these back below
     twist = AIM.twist; lean = AIM.lean; headX = AIM.headX; headY = AIM.headY; hL = AIM.hL; kL = AIM.kL; aL = AIM.aL; hR = AIM.hR; kR = AIM.kR; aR = AIM.aR; bob = AIM.hipsY - .98; fR = 1.4; fL = .9; }
+  if (move === "Sit") { hL = hR = SIT.h; kL = kR = SIT.k; aL = aR = SIT.a; sL = sR = -.32; eL = eR = -1.05; sLz = .08; sRz = -.08; headY = Math.sin(t*.4)*.2; headX = .05; lean = .06; bob = 0; }
   let eRz = 0, twR = move === "Aim" ? aimT : 0;
   if (move === "Wave") { if (!waveSol) waveSol = solveWave(); const k = .5 + .5*Math.sin(t*6.5), v = waveSol.a.map((q, i) => q + (waveSol.b[i] - q)*k);
     sR = v[0]; yR = v[1]; sRz = v[2] + .08; eR = v[3]; twR = v[4]; sL = .03; headY = -.12; fR = .1; }
@@ -780,6 +782,7 @@ function pose(t, P, move, t0) {
   else if (move === "Wave") { P.R.rig.pose([.04, .03, .05, .08], 1.5, "open"); P.L.rig.pose(relaxed, 1, "relax"); }
   else { P.L.rig.pose(relaxed, 1, "relax"); P.R.rig.pose(relaxed, 1, "relax"); }
   set(P.LL.hip, 0, hL); set(P.LR.hip, 0, hR); set(P.LL.kn, 0, kL); set(P.LR.kn, 0, kR); set(P.LL.an, 0, aL); set(P.LR.an, 0, aR);
+  if (move === "Sit") P.hips.t[1] = lerp(P.hips.t[1], SIT.y, .4); else
   P.hips.t[1] = lerp(P.hips.t[1], .98 + bob - (move === "Run" ? .03 : 0) - (move === "Punch" ? .02 : 0), .4);
   set(P.chest, 0, lean); set(P.chest, 1, twist); set(P.head, 1, headY, .1); set(P.head, 0, headX, .1);
 }
@@ -1471,7 +1474,7 @@ const INTERIOR = (function () {
   const cmp = (a, b) => { const R = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) R.push(a.R[i*3]*b.R[j] + a.R[i*3 + 1]*b.R[3 + j] + a.R[i*3 + 2]*b.R[6 + j]); return { R, t: ap(a, b.t) }; };
   /* ---------- batcher: one mesh per material, split at 60k vertices ---------- */
   const BATCH = {}; let texId = 1; const TID = new Map(); const tid = t => { if (!t) return 0; if (!TID.has(t)) TID.set(t, texId++); return TID.get(t); };
-  function put(m, g, col, o = {}) { const k = col + "|" + tid(o.tex) + "|" + (o.shine || 0) + "|" + (o.unlit ? 1 : 0) + "|" + (o.cut ? 1 : 0) + "|" + (o.glass ? 1 : 0) + "|" + (o.shade ? 1 : 0);
+  function put(m, g, col, o = {}) { const k = col + "|" + tid(o.tex) + "|" + (o.shine || 0) + "|" + (o.unlit ? 1 : 0) + "|" + (o.cut ? 1 : 0) + "|" + (o.glass ? 1 : 0) + "|" + (o.shade ? 1 : 0) + "|" + (o.decal ? 1 : 0);
     let B = BATCH[k]; if (!B) B = BATCH[k] = { col, o, parts: [{ p: [], n: [], u: [], i: [] }] }; let P = B.parts[B.parts.length - 1];
     if (P.p.length/3 + g.p.length/3 > 60000) { P = { p: [], n: [], u: [], i: [] }; B.parts.push(P); }
     const base = P.p.length/3; for (let v = 0; v < g.p.length/3; v++) { const q = ap(m, [g.p[v*3], g.p[v*3 + 1], g.p[v*3 + 2]]), nn = apN(m, [g.n[v*3], g.n[v*3 + 1], g.n[v*3 + 2]]); P.p.push(...q); P.n.push(...nn); P.u.push(g.u[v*2], g.u[v*2 + 1]); }
@@ -1488,7 +1491,9 @@ const INTERIOR = (function () {
   const plane = (w, h) => grid(1, 1, (a, b) => [(b - .5)*w, (a - .5)*h, 0, b, 1 - a]);          // faces +z, uv canvas-up
   const flat = (w, d) => grid(1, 1, (a, b) => [(b - .5)*w, 0, (.5 - a)*d, b, a]);                // faces +y
   // building blocks used by prefabs: P(frame) gives box/rbox/cyl/etc in that frame
+  const SEATS = [];
   function P(m) { return {
+    at: (x, y, z) => ap(m, [x, y, z]), yaw: () => Math.atan2(m.R[2], m.R[8]),
     box: (col, w, h, d, x, y, z, o, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), boxG(w, h, d), col, o),
     rb: (col, w, h, d, x, y, z, o, b = .01, r = [0, 0, 0]) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), rbox(w, h, d, b), col, o),
     cy: (col, r0, r1, h, x, y, z, o, r = [0, 0, 0], cols = 12) => put(cmp(m, fr(x, y, z, r[1], r[0], r[2])), cyl(r0, r1, h, cols), col, o),
@@ -1567,29 +1572,30 @@ const INTERIOR = (function () {
     for (let k = 0; k < 6; k++) p.el("#2a2b2e", .008, .008, .008, .1 + k*.01, .07 - k*.01, -.05, PL); };
   // OFF-04 CRT computer: tapered shell, recessed screen, stand; tower and keyboard separate
   OFF.crt = (p, s = 0) => { const sh = sweep([[0, .215, .19], [.05, .215, .19], [.3, .15, .14], [.4, .11, .1]], 6, 20); p.g(PLAS, sh, 0, .3, .03, PL, [-Math.PI/2, 0, 0]);
-    p.rb(PLAS, .43, .36, .05, 0, .3, .055, PL, .015); p.pl("#000000", .35, .27, 0, .31, .1, {}); p.pl("#ffffff", .33, .25, 0, .31, .11, { tex: T.scr[s % T.scr.length], unlit: true });
-    for (let k = 0; k < 4; k++) p.box("#8d877a", .016, .01, .006, .1 + k*.024, .14, .082, PL); p.box("#33ff33", .008, .008, .004, -.17, .14, .082, { unlit: true });
+    for (const [w, hh, x, y] of [[.43, .045, 0, .4575], [.43, .045, 0, .1425], [.04, .27, -.195, .3], [.04, .27, .195, .3]]) p.rb(PLAS, w, hh, .05, x, y, .055, PL, .006);
+    p.pl("#ffffff", .35, .27, 0, .3, .05, { tex: T.scr[s % T.scr.length], unlit: true });
+    for (let k = 0; k < 4; k++) p.box("#8d877a", .016, .01, .006, .1 + k*.024, .13, .083, PL); p.box("#33ff33", .008, .008, .004, -.17, .13, .083, { unlit: true });
     for (let k = 0; k < 6; k++) p.box("#8d877a", .2, .006, .01, 0, .2 + k*.03, -.37, PL);
     p.cy(PLAS, .05, .04, .07, 0, .055, -.05, PL); p.g(PLAS, sweep([[0, .14, .12], [.03, .13, .11], [.05, .1, .09]], 2, 16), 0, .0, -.05, PL); };
   OFF.tower = (p) => { p.rb(PLAS, .2, .46, .42, 0, .23, 0, PL, .012); p.box("#8d877a", .15, .045, .006, 0, .38, .212, PL); p.box("#8d877a", .15, .045, .006, 0, .32, .212, PL); p.box("#2a2a2a", .1, .008, .006, 0, .25, .212, PL);
     p.cy("#8d877a", .012, .012, .01, .05, .1, .21, PL, [Math.PI/2, 0, 0]); p.box("#33ff33", .008, .008, .004, -.05, .1, .213, { unlit: true }); for (let k = 0; k < 8; k++) p.box("#6f6a60", .14, .006, .004, 0, .05 + k*.012, -.212, PL); };
-  OFF.keyboard = (p) => { p.rb(PLAS, .45, .025, .16, 0, .0155, 0, PL, .006, [.06, 0, 0]); p.fl("#ffffff", .42, .13, 0, .033, 0, { tex: T.keys, shine: .2 }, [.06, 0, 0]); p.rb(PLAS, .06, .02, .1, .3, .013, 0, PL, .01); };
+  OFF.keyboard = (p) => { p.rb(PLAS, .45, .025, .16, 0, .0155, 0, PL, .006, [.06, 0, 0]); p.fl("#ffffff", .42, .13, 0, .033, 0, { tex: T.keys, shine: .2, decal: true }, [.06, 0, 0]); p.rb(PLAS, .06, .02, .1, .3, .013, 0, PL, .01); };
   // OFF-02 workstation 1.40 x 0.74 x 0.70 : laminate top, two steel T-legs, modesty panel, keyboard tray
   OFF.workstation = (p, s = 0) => { p.rb("#ffffff", 1.4, .035, .7, 0, .7225, 0, { tex: T.laminate, shine: .3 }, .012);
     for (const x of [-.62, .62]) { p.box(STEEL, .06, .68, .06, x, .35, 0, MET); p.box(STEEL, .06, .03, .62, x, .015, 0, MET); p.box(STEEL, .05, .03, .6, x, .69, 0, MET); for (const z of [-.3, .3]) p.cy("#333333", .02, .02, .01, x, 0, z, PL); }
     p.box(STEEL, 1.18, .35, .02, 0, .52, .32, MET); p.box(STEEL, 1.2, .03, .04, 0, .67, .3, MET);
     p.box("#3a3d42", .6, .02, .3, 0, .62, -.22, PL); p.box(STEEL, .02, .04, .3, -.3, .64, -.22, MET); p.box(STEEL, .02, .04, .3, .3, .64, -.22, MET);
     const top = p.sub(0, .743, 0); OFF.crt(top.sub(.15, 0, .1, Math.PI), s); OFF.keyboard(top.sub(.15, 0, -.17, Math.PI)); if (s % 2) OFF.phone(top.sub(-.48, 0, .05, Math.PI + .3));
-    for (let k = 0; k < 2 + s % 3; k++) top.fl("#ffffff", .21, .297, -.4 + k*.02, .002 + k*.002, -.12, { tex: T.paper }, [0, .2*k - .1, 0]);
+    for (let k = 0; k < 2 + s % 3; k++) top.fl("#ffffff", .21, .297, -.4 + k*.02, .002 + k*.002, -.12, { tex: T.paper, decal: true }, [0, .2*k - .1, 0]);
     top.cy("#e9e4d8", .04, .035, .1, -.55, 0, -.2, PL); OFF.tower(p.sub(.45, 0, .05, Math.PI)); };
   // OFF-10 rolling office chair
-  OFF.chair = (p, c = FAB) => { for (let k = 0; k < 5; k++) { const a = k/5*6.283, q = p.sub(0, 0, 0, a); q.box(BLK, .04, .035, .3, 0, .07, .15, PL, [-.08, 0, 0]); q.el(BLK, .025, .025, .025, 0, .028, .29, PL); q.cy("#222222", .006, .006, .05, -.02, .028, .29, PL, [0, 0, Math.PI/2]); }
+  OFF.chair = (p, c = FAB) => { { const q = p.at(0, 0, 0); SEATS.push([q[0], q[1], q[2], p.yaw(), .5]); } for (let k = 0; k < 5; k++) { const a = k/5*6.283, q = p.sub(0, 0, 0, a); q.box(BLK, .04, .035, .3, 0, .07, .15, PL, [-.08, 0, 0]); q.el(BLK, .025, .025, .025, 0, .028, .29, PL); q.cy("#222222", .006, .006, .05, -.02, .028, .29, PL, [0, 0, Math.PI/2]); }
     p.cy(BLK, .045, .045, .05, 0, .07, 0, PL); p.cy(CHROME, .022, .022, .3, 0, .1, 0, MET); p.box(BLK, .26, .03, .26, 0, .41, 0, PL);
     p.rb(c, .5, .08, .48, 0, .46, 0, { tex: T.leather, shine: .25 }, .03); p.box(BLK, .06, .3, .03, 0, .62, -.25, PL, [-.1, 0, 0]);
     p.rb(c, .46, .5, .07, 0, .85, -.28, { tex: T.leather, shine: .25 }, .03, [-.12, 0, 0]);
     for (const x of [-.27, .27]) { p.box(BLK, .03, .2, .03, x, .52, .02, PL); p.rb(BLK, .06, .03, .24, x, .63, .02, PL, .012); } };
   // OFF-09 visitor chair: tapered legs, cushion, curved back panel, frame
-  OFF.visitor = (p, col = "#6e5a48") => { for (const [x, z] of [[-.24, .22], [.24, .22], [-.24, -.22], [.24, -.22]]) p.cy(WALD, .02, .014, .42, x, 0, z, W);
+  OFF.visitor = (p, col = "#6e5a48") => { { const q = p.at(0, 0, 0); SEATS.push([q[0], q[1], q[2], p.yaw(), .5]); } for (const [x, z] of [[-.24, .22], [.24, .22], [-.24, -.22], [.24, -.22]]) p.cy(WALD, .02, .014, .42, x, 0, z, W);
     p.box(WALD, .52, .05, .5, 0, .405, 0, W); p.rb(col, .52, .09, .5, 0, .47, .01, { tex: T.fabric, shine: .1 }, .03);
     for (const x of [-.24, .24]) p.cy(WALD, .016, .016, .42, x, .43, -.24, W, [-.12, 0, 0]);
     const back = grid(4, 10, (a, b) => { const x = (b - .5)*.48, y = a*.34, z = -.025*Math.cos((b - .5)*3); return [x, y, z, b, a]; }); p.g(col, back, 0, .55, -.27, { tex: T.fabric, shine: .1 }, [-.12, 0, 0]);
@@ -1600,7 +1606,7 @@ const INTERIOR = (function () {
       for (let k = 0; k < 3; k++) { const y = .2 + k*.19; p.rb(WAL, .46, .17, .02, x, y, -.44, W, .006); p.cy(BRASS, .006, .006, .1, x - .05, y + .02, -.46, MET, [0, 0, Math.PI/2]); for (const dx of [-.05, .05]) p.cy(BRASS, .01, .01, .02, x + dx, y + .02, -.45, MET, [Math.PI/2, 0, 0]); } }
     p.box(WAL, .96, .5, .03, 0, .44, .41, W); p.box(WAL, .96, .1, .03, 0, .64, -.42, W); p.box("#1d2a22", .8, .006, .5, 0, .763, -.1, { shine: .3 });
     const top = p.sub(0, .763, 0); OFF.phone(top.sub(.7, 0, -.15, Math.PI - .4)); OFF.crt(top.sub(-.55, 0, .12, Math.PI - .25), 3); OFF.keyboard(top.sub(-.45, 0, -.25, Math.PI - .25));
-    top.box(BRASS, .3, .06, .02, 0, .03, .38, { tex: T.nameplate, shine: .8 }, [-.3, 0, 0]); top.fl("#ffffff", .21, .297, .15, .008, -.1, { tex: T.paper }, [0, .3, 0]);
+    top.box(BRASS, .3, .06, .02, 0, .03, .38, { tex: T.nameplate, shine: .8 }, [-.3, 0, 0]); top.fl("#ffffff", .21, .297, .15, .008, -.1, { tex: T.paper, decal: true }, [0, .3, 0]);
     top.cy(BRASS, .07, .06, .02, .5, 0, .25, MET); top.cy(BRASS, .01, .01, .38, .5, .02, .25, MET); top.cy("#2d4b36", .05, .1, .14, .5, .36, .25, { shine: .2 }); };
   // OFF-05 file cabinet 0.47 x 1.32 x 0.62
   OFF.file = (p) => { p.rb("#8a8f94", .47, 1.25, .62, 0, .695, 0, { shine: .4 }, .008); p.box("#55595e", .43, .07, .58, 0, .035, 0, PL);
@@ -1677,7 +1683,10 @@ const INTERIOR = (function () {
   const GLASS = { glass: true, shine: 1 }, LIT = c => ({ unlit: true }), FROST = { glass: true, shine: .6 };
   // ---------- new prefabs ----------
   // flat 24" monitor on a stand
-  OFF.flat = (p, s = 0) => { p.rb("#141518", .56, .34, .03, 0, .42, 0, PL, .008); p.pl("#ffffff", .53, .31, 0, .42, .03, { tex: T.flat[s % T.flat.length], unlit: true }); p.box("#2a2b2e", .05, .2, .03, 0, .19, -.03, MET); p.rb("#2a2b2e", .22, .015, .17, 0, .008, -.03, MET, .006); };
+  OFF.flat = (p, s = 0) => { const W = .56, H = .34, b = .018, y = .42;
+    for (const [w, hh, x, yy] of [[W, b, 0, y + H/2 - b/2], [W, b + .01, 0, y - H/2 + (b + .01)/2], [b, H - 2*b - .01, -W/2 + b/2, y + .005], [b, H - 2*b - .01, W/2 - b/2, y + .005]]) p.box("#141518", w, hh, .03, x, yy, 0, PL);
+    p.pl("#ffffff", W - 2*b, H - 2*b - .01, 0, y + .005, -.004, { tex: T.flat[s % T.flat.length], unlit: true }); p.box("#050506", W - .012, H - .012, .014, 0, y, -.025, PL);
+    p.box("#2a2b2e", .05, .2, .03, 0, .19, -.05, MET); p.box("#2a2b2e", .1, .06, .02, 0, .4, -.042, MET); p.rb("#2a2b2e", .22, .015, .17, 0, .008, -.05, MET, .006); };
   OFF.mouse = (p) => { p.el("#1a1a1a", .03, .015, .05, 0, .02, 0, PL); p.box("#2a2a2c", .22, .003, .18, 0, .0035, 0, PL); };
   OFF.cup = (p, c = "#f4f1ea") => { p.cy(c, .04, .045, .1, 0, 0, 0, { shine: .4 }); p.cy("#3a2010", .036, .036, .002, 0, .09, 0, PL); p.box(c, .012, .05, .03, .05, .05, 0, PL); };
   OFF.binders = (p) => { for (let k = 0; k < 4; k++) p.box(["#2b4c7e", "#7e2b2b", "#2b6e4c", "#d9c25a"][k], .05, .29, .24, k*.055, .145, 0, { shine: .2 }); };
@@ -1686,7 +1695,7 @@ const INTERIOR = (function () {
       d.rb("#ffffff", 1.5, .035, .78, 0, .7425, 0, { tex: T.laminate, shine: .45 }, .012); d.box("#1b1c1f", .04, .72, .7, -.72, .36, 0, MET); d.box("#1b1c1f", .04, .72, .7, .72, .36, 0, MET); d.box("#1b1c1f", 1.4, .05, .04, 0, .7, -.33, MET);
       const top = d.sub(0, .763, 0); OFF.flat(top.sub(-.27, 0, -.2, .18), k); OFF.flat(top.sub(.29, 0, -.2, -.18), k + 1); OFF.keyboard(top.sub(0, 0, .12)); OFF.mouse(top.sub(.33, 0, .14));
       if (k % 2) OFF.cup(top.sub(-.6, 0, .1), k % 4 === 1 ? "#c8102e" : "#f4f1ea"); else OFF.binders(top.sub(-.68, 0, -.25));
-      if (k % 3 === 0) OFF.phone(top.sub(.55, 0, -.1, -.3)); for (let n = 0; n < 1 + k % 3; n++) top.fl("#ffffff", .21, .297, .5 - n*.03, .004 + n*.003, .15, { tex: T.paper }, [0, .3*n - .2, 0]);
+      if (k % 3 === 0) OFF.phone(top.sub(.55, 0, -.1, -.3)); for (let n = 0; n < 1 + k % 3; n++) top.fl("#ffffff", .21, .297, .5 - n*.03, .004 + n*.003, .15, { tex: T.paper, decal: true }, [0, .3*n - .2, 0]);
       OFF.chair(d.sub(.05 - (k % 3)*.08, 0, .9 + (k % 2)*.12, Math.PI + (k % 3 - 1)*.3), ["#1d1f24", "#2a2d35", "#1d1f24"][k % 3]); }
     p.box("#c9d6dc", 3.0, .42, .03, 0, .97, 0, FROST); p.box("#9aa4ab", 3.02, .025, .05, 0, 1.19, 0, MET); };
   // TV-01 anchor desk (3.40 x 1.05 x 1.10): crescent top, faceted fascia, lit centre emblem, toe plinth; sits on a round LED-edged riser
@@ -1695,7 +1704,7 @@ const INTERIOR = (function () {
     slab(.98, 1.05, "#ffffff", { tex: T.marble, shine: .8 }, R0, R1); slab(.14, .98, "#0f2d55", { shine: .7 }, R0 + .25, R1 - .05); slab(0, .14, "#1a1a1c", PL, R0 + .3, R1 - .1);
     for (let k = 0; k < 3; k++) { const ang = a0 + (a1 - a0)*(k + .5)/3, rr = R1 - .04, x = Math.sin(ang)*rr, z = -Math.cos(ang)*rr + R1 - .55; p.box("#c9ced5", .02, .84, .02, Math.sin(ang - .27)*rr, .56, -Math.cos(ang - .27)*rr + R1 - .55, MET);
       if (k === 1) p.pl("#ffffff", .9, .5, x, .6, z - .05, { tex: T.anchor, unlit: true }, [0, Math.PI + ang, 0]); }
-    for (let k = 0; k < 2; k++) { const top = p.sub(-.45 + k*.9, 1.053, -.2); top.box("#16181b", .3, .006, .22, 0, .003, 0, PL); top.fl("#ffffff", .21, .297, .2, .004, .02, { tex: T.paper }); OFF.cup(top.sub(-.3, 0, .05), "#0f2d55"); }
+    for (let k = 0; k < 2; k++) { const top = p.sub(-.45 + k*.9, 1.053, -.2); top.box("#16181b", .3, .006, .22, 0, .003, 0, PL); top.fl("#ffffff", .21, .297, .2, .004, .02, { tex: T.paper, decal: true }); OFF.cup(top.sub(-.3, 0, .05), "#0f2d55"); }
     OFF.flat(p.sub(.9, 1.05, -.05, -.5), 1); };
   TV.riser = (p) => { p.cy("#141519", 2.6, 2.6, .2, 0, 0, 0, { shine: .6 }, [0, 0, 0], 48); p.cy("#4a8cff", 2.62, 2.62, .03, 0, .085, 0, { unlit: true }, [0, 0, 0], 48); p.cy("#1c1e22", 2.5, 2.5, .005, 0, .2, 0, { shine: .7 }, [0, 0, 0], 48); };
   // TV-02 studio camera on a pedestal + TV-03 teleprompter hood
@@ -1740,7 +1749,7 @@ const INTERIOR = (function () {
     for (const ang of [a0 + .03, a1 - .03]) { const x = Math.sin(ang)*2.0, z = Math.cos(ang)*2.0 + cz; p.box("#2a2d33", .05, .66, .55, x, .43, z, PL, [0, ang, 0]); }
     const top = p.sub(0, .763, -.35); OFF.flat(top.sub(-.55, 0, -.1, Math.PI + .25), 0); OFF.flat(top.sub(.55, 0, -.1, Math.PI - .25), 3); OFF.keyboard(top.sub(-.5, 0, .18, Math.PI + .25)); OFF.phone(top.sub(.9, 0, .1, Math.PI));
     OFF.cup(top.sub(.2, 0, .2)); const np = p.sub(0, 1.17, .45, 0, -.35); np.box("#8a6a2a", .52, .12, .012, 0, 0, -.008, MET); np.pl("#ffffff", .5, .1, 0, 0, .002, { tex: T.nameplate, shine: .8 });
-    p.g("#ffffff", grid(4, 12, (a, b) => [(b - .5)*.25 + .9, 1.12 + .004, .32 + (a - .5)*.18, b, a]), 0, 0, 0, { tex: T.paper }); };
+    p.g("#ffffff", grid(4, 12, (a, b) => [(b - .5)*.25 + .9, 1.12 + .004, .32 + (a - .5)*.18, b, a]), 0, 0, 0, { tex: T.paper, decal: true }); };
   /* ================= ARCHITECTURE ================= */
   const SOLID = [], WALLS = [], root = P(fr(IO[0], 0, IO[2])), WX = 24, WZ = 18, HS = 7, HL = 3.4, BAL = 3.2, BZ = 15.5;
   const sol = (x0, z0, x1, z1, wall) => { const b = [IO[0] + Math.min(x0, x1), IO[2] + Math.min(z0, z1), IO[0] + Math.max(x0, x1), IO[2] + Math.max(z0, z1)]; SOLID.push(b); if (wall) WALLS.push(b); };
@@ -1854,7 +1863,7 @@ const INTERIOR = (function () {
     RAD.panel(root.sub(x, y, z, onBack ? Math.PI/2 : Math.PI), k % 2 ? "#5a1e26" : "#2a2c30"); }
   root.pl("#ffffff", .7, .26, 5.13, 2.95, 13.3, { tex: T.onair, unlit: true }, [0, Math.PI/2, 0]);
   { const i = root.sub(7.0, 0, 6.6); i.rb("#2b3346", 3.4, .012, 2.6, 0, .006, 0, { tex: T.fabric, shine: 0 }, .004); i.cy("#ffffff", .5, .5, .03, 0, .42, 0, { tex: T.marble, shine: .8 }, [0, 0, 0], 24); i.cy("#1c1d20", .06, .06, .42, 0, 0, 0, MET); i.cy("#1c1d20", .3, .3, .02, 0, 0, 0, MET, [0, 0, 0], 20);
-    for (const [x, ry] of [[-1.05, Math.PI/2 - .35], [1.05, -Math.PI/2 + .35]]) { const c = i.sub(x, 0, 0, ry); c.rb("#7a2a2e", .8, .14, .74, 0, .38, 0, { tex: T.leather, shine: .3 }, .05); c.rb("#7a2a2e", .8, .5, .16, 0, .66, -.3, { tex: T.leather, shine: .3 }, .05, [-.12, 0, 0]);
+    for (const [x, ry] of [[-1.05, Math.PI/2 - .35], [1.05, -Math.PI/2 + .35]]) { const c = i.sub(x, 0, 0, ry); { const q = c.at(0, 0, 0); SEATS.push([q[0], q[1], q[2], c.yaw(), .52]); } c.rb("#7a2a2e", .8, .14, .74, 0, .38, 0, { tex: T.leather, shine: .3 }, .05); c.rb("#7a2a2e", .8, .5, .16, 0, .66, -.3, { tex: T.leather, shine: .3 }, .05, [-.12, 0, 0]);
       for (const sx of [-1, 1]) c.rb("#7a2a2e", .14, .26, .7, sx*.37, .52, 0, { tex: T.leather, shine: .3 }, .05); for (const [lx, lz] of [[-.32, .3], [.32, .3], [-.32, -.3], [.32, -.3]]) c.cy("#1c1d20", .02, .015, .3, lx, 0, lz, MET); }
     OFF.cup(i.sub(.15, .453, .1), "#0f2d55"); const b = i.sub(-1.85, 0, 0, Math.PI/2); TV.led(b.sub(0, .3, 0), 2.4, 2.6, T.ledV, "#c8102e"); b.box("#141518", 2.5, .3, .5, 0, .15, -.2, PL); sol(4.9, 5.3, 8.7, 7.9); }
   { const m = root.sub(17.6, 0, 6.6, -Math.PI/2 - .35); m.box("#141518", 2.6, 1.6, .1, 0, 1.55, 0, PL); m.pl("#ffffff", 2.5, 1.5, 0, 1.55, .08, { tex: T.scr[1], unlit: true }); m.box("#2a2c30", .3, .75, .3, 0, .375, -.05, MET); m.box("#2a2c30", 1.2, .04, .6, 0, .02, -.05, MET);
@@ -1867,6 +1876,8 @@ const INTERIOR = (function () {
   const shade = (x, z, w, d, y = .02) => root.fl("#ffffff", w, d, x, y, z, { tex: shadowT, unlit: true, shade: true });
   for (const [x, z] of [[7.5, 12.8], [12, 12.8], [16.5, 12.8]]) shade(x, z, 3.6, 2.6, .025); shade(12, 2.0, 3.6, 1.8); shade(4, 2.0, 2.6, 1.4); shade(20, 2.0, 2.6, 1.4);
   for (const [x, z] of [[9.2, 5.6], [12, 5.3], [14.8, 5.6]]) shade(x, z, 1.4, 1.4); shade(2.4, 7.6, 1.4, 2.6); shade(2.2, 12.9, 1.6, 3.0);
+  const CHECKPOINTS = [["gns", "GNS Studios — lobby", 12, 0.9], ["m3", "Mission 3 — evidence handoff (Ben Turner's desk)", 4, 3.95], ["m4", "Mission 4 — tape playback (control room)", 3.9, 9.4], ["richie", "Richie's office", 20.8, 3.95]];
+  for (const [, , x, z] of CHECKPOINTS) { root.cy("#f2c318", .55, .55, 1.1, x, .02, z, { glass: true, shine: 0 }, [0, 0, 0], 24); root.cy("#f2c318", .58, .58, .012, x, .006, z, { unlit: true, decal: true }, [0, 0, 0], 24); root.cy("#141518", .5, .5, .013, x, .007, z, { decal: true }, [0, 0, 0], 24); }
   /* ---------- automatic sliding glass doors: newsroom entrance, both offices, control room, radio booth ---------- */
   const doorN = node([0, 0, 0]), doorG = node([0, 0, 0]), DOORS = [], leafMesh = (n, g, col, o) => { const m = mesh(g, col, o); m.flat = 0; n.meshes.push(m); };
   function slider(cx, cz, ax, w, h, leaves, off = 0) { const d = { c: [IO[0] + cx + (ax === "z" ? off : 0), IO[2] + cz + (ax === "x" ? off : 0)], open: 0, leaves: [], solid: null };
@@ -1884,9 +1895,9 @@ const INTERIOR = (function () {
       if (d.open > .75) { d.solid[0] = d.solid[1] = d.solid[2] = d.solid[3] = -1e9; } else for (let k = 0; k < 4; k++) d.solid[k] = d.box[k]; } }
   update(0, 0, 1);
   /* ---------- upload batches: opaque, glass (blended), shade (multiplied) ---------- */
-  const node0 = node([0, 0, 0]), glassN = node([0, 0, 0]), shadeN = node([0, 0, 0]);
-  for (const k in BATCH) { const B = BATCH[k]; for (const part of B.parts) { const m = mesh(part, B.col, { tex: B.o.tex, shine: B.o.shine != null ? B.o.shine : .05, unlit: B.o.unlit, cut: B.o.cut }); m.flat = 0; (B.o.glass ? glassN : B.o.shade ? shadeN : node0).meshes.push(m); } }
-  [node0, glassN, shadeN].forEach(n => computeWorld(n, ident())); for (const k in BATCH) delete BATCH[k];
+  const node0 = node([0, 0, 0]), glassN = node([0, 0, 0]), shadeN = node([0, 0, 0]), decalN = node([0, 0, 0]);
+  for (const k in BATCH) { const B = BATCH[k]; for (const part of B.parts) { const m = mesh(part, B.col, { tex: B.o.tex, shine: B.o.shine != null ? B.o.shine : .05, unlit: B.o.unlit, cut: B.o.cut }); m.flat = 0; (B.o.glass ? glassN : B.o.shade ? shadeN : B.o.decal ? decalN : node0).meshes.push(m); } }
+  [node0, glassN, shadeN, decalN].forEach(n => computeWorld(n, ident())); for (const k in BATCH) delete BATCH[k];
   const at = (x, z) => [IO[0] + x, IO[2] + z];
   // real light sources: [x, y, z, reach, r, g, b] (local) — downlights, newsroom light frames, studio fresnels, LED-wall spill, booth practicals
   const WARM = [1.05, .9, .72], COOL = [.95, .98, 1.0], LIGHTS = [
@@ -1906,7 +1917,7 @@ const INTERIOR = (function () {
   const floorY = (x, z) => { const lx = x - IO[0], lz = z - IO[2]; if (lz >= BZ) return BAL; if (lx > SX0 && lx < SX1 && lz > SZ0) return Math.min(BAL, Math.ceil((lz - SZ0)/TRD)*RIS); return 0; };
   const ceilY = (x, z) => { const lx = x - IO[0], lz = z - IO[2]; return lz < 4.5 || (lx < 5 && lz < BZ) ? HL : HS; };
   const ROOMS = [[8, 0, 16, 4.5, "Lobby"], [0, 0, 8, 4.5, "Ben Turner's office"], [16, 0, 17.6, 4.5, "Hallway"], [17.6, 0, 24, 4.5, "Richie's office"], [0, 4.5, 5, 10.3, "Control room"], [0, 10.3, 5, BZ, "Radio booth"], [0, BZ, 24, 18, "Balcony"], [5, 4.5, 24, BZ, "Studio & newsroom"]];
-  return { lightsNear, update, doors: doorN, doorGlass: doorG, root: node0, glass: glassN, shade: shadeN, SOLID, WALLS, H: HS, floorY, ceilY, name: "GNS Studios", spawn: at(12, 1.0), exit: at(12, -.05), drawCalls: node0.meshes.length + glassN.meshes.length + shadeN.meshes.length + DOORS.length*16,
+  return { lightsNear, update, doors: doorN, doorGlass: doorG, root: node0, glass: glassN, shade: shadeN, decal: decalN, SEATS, CHECKPOINTS: CHECKPOINTS.map(([id, name, x, z]) => ({ id, name, x: IO[0] + x, z: IO[2] + z })), SOLID, WALLS, H: HS, floorY, ceilY, name: "GNS Studios", spawn: at(12, 1.0), exit: at(12, -.05), drawCalls: node0.meshes.length + glassN.meshes.length + shadeN.meshes.length + DOORS.length*16,
     room: (x, z) => { const lx = x - IO[0], lz = z - IO[2]; const r = ROOMS.find(r => lx >= r[0] && lx < r[2] && lz >= r[1] && lz < r[3]); return r ? r[4] : "GNS Studios"; },
     bounds: [IO[0] + .25, IO[2] + .25, IO[0] + WX - .25, IO[2] + WZ - .25], inBounds: (x, z) => x > IO[0] - 2 && x < IO[0] + WX + 2 && z > IO[2] - 2 && z < IO[2] + WZ + 2 }; })();
 
@@ -2037,11 +2048,15 @@ gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
 let last = 0; const label = document.getElementById("where");
 pl.inCar = false;
 const actB = document.getElementById("actB");
+let seat = null; const nearSeat = () => { let best = null, bd = .95; for (const s of INTERIOR.SEATS) { const d = Math.hypot(s[0] - pl.x, s[2] - pl.z); if (d < bd && Math.abs(s[1] - pl.y) < .5) { bd = d; best = s; } } return best; };
 function actState() { if (!pick.hidden || wastedT) return null; const G = CITY.GARAGE;
+  if (inside) return seat ? "stand" : nearSeat() ? "sit" : null;
   if (pl.inCar) return Math.abs(myCar.v) < 2 ? "exit" : null;
   for (const c of [myCar].concat(VEH.filter(v => v.mode !== "chase").map(v => v.car))) if (c && Math.hypot(pl.x - c.x, pl.z - c.z) < 3.2 && Math.abs(c.v) < 3) return c === myCar ? "enter" : "jack";
   if (G && Math.hypot(pl.x - G.door[0], pl.z - G.door[1]) < 4.5) return "get"; return null; }
 function act() { const k = actState(), G = CITY.GARAGE; if (!k) return; const c = myCar;
+  if (k === "sit") { seat = nearSeat(); pl.sp = 0; return; }
+  if (k === "stand") { const s2 = seat; seat = null; pl.x = s2[0] + Math.sin(s2[3])*.7; pl.z = s2[2] + Math.cos(s2[3])*.7; if (blocked(pl.x, pl.z)) { pl.x = s2[0] + Math.sin(s2[3]); pl.z = s2[2] + Math.cos(s2[3]); } return; }
   if (k === "exit") { const lx = Math.cos(c.h), lz = -Math.sin(c.h);
     for (const s of [1.6, -1.6, 2.6, -2.6]) { const x = c.x + lx*s, z = c.z + lz*s; pl.inCar = false; if (!blocked(x, z)) { pl.x = x; pl.z = z; pl.h = c.h; pl.sp = 0; return; } pl.inCar = true; } return; }
   if (k === "get") { openPick(); return; }
@@ -2185,7 +2200,7 @@ function punchHit() { for (const n of NPCS.concat(COPS)) if (n.h && !n.down && !
 drawHud();
 window.__av = { pl, G: () => CITY.GARAGE, VEH, COPS, get my() { return myCar; }, addWanted, get wanted() { return wanted; }, hp, TREES, NPCS, pick, HL, enter: () => enterBuilding(CITY.DOORS.find(d => d.id === "gns")), get inside() { return !!inside; }, DOORS: CITY.DOORS, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; }, L: [CITY.LX, CITY.LZ], get fn() { return frameNo; } };
 // ---- entering buildings: walk into the door marker, fade to black, spawn inside ----
-let inside = null, fading = false, doorMsgT = 0; const fadeE = document.createElement("div");
+let inside = null, fading = false, doorMsgT = 0, lastCp = null; try { lastCp = localStorage.getItem("av_gns_cp"); } catch (e) {} const fadeE = document.createElement("div");
 fadeE.style.cssText = "position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .35s;z-index:6"; document.body.appendChild(fadeE);
 function fadeTo(fn) { if (fading) return; fading = true; fadeE.style.opacity = "1"; setTimeout(() => { fn(); pl.sp = 0; setTimeout(() => { fadeE.style.opacity = "0"; fading = false; }, 250); }, 380); }
 function enterBuilding(d) { fadeTo(() => { inside = { door: d }; const [x, z] = INTERIOR.spawn; pl.x = x; pl.z = z; pl.y = 0; pl.h = 0; camYaw = Math.PI; camPitch = .22; }); }
@@ -2199,7 +2214,8 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   // input -> camera-relative movement
   let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stick.x, iz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stick.y;
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
-  const cIx = ix, cIz = iz; if (pl.inCar || !pick.hidden || wastedT) { ix = 0; iz = 0; }
+  if (seat && (Math.abs(ix) > .3 || Math.abs(iz) > .3)) act();
+  const cIx = ix, cIz = iz; if (pl.inCar || !pick.hidden || wastedT || seat) { ix = 0; iz = 0; }
   const running = keys.ShiftLeft || keys.ShiftRight || runLatch || Math.hypot(stick.x, stick.y) > .92, punching = t - punchT < .55;
   const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = -fz, rz = fx;
   const mx = fx*iz + rx*ix, mz = fz*iz + rz*ix, ml = Math.hypot(mx, mz);
@@ -2214,7 +2230,9 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   if (pl.inCar && wastedT) myCar.drive(dt, 0, 0, true, carHitFn);
   if (camHold && !camDrag && pl.inCar && Math.abs(myCar.v) > 4) camHold = false;
   simStep(dt, t);
-  move = punching ? "Punch" : pl.sp > 3 ? "Run" : pl.sp > .3 ? "Walk" : "Idle";
+  if (inside && !seat) for (const c of INTERIOR.CHECKPOINTS) if (Math.hypot(pl.x - c.x, pl.z - c.z) < .6 && lastCp !== c.id) { lastCp = c.id; try { localStorage.setItem("av_gns_cp", c.id); } catch (e) {} label.textContent = "Checkpoint saved · " + c.name; doorMsgT = t + 2.5; }
+  if (seat) { pl.x = seat[0]; pl.z = seat[2]; pl.h = seat[3]; }
+  move = seat ? "Sit" : punching ? "Punch" : pl.sp > 3 ? "Run" : pl.sp > .3 ? "Walk" : "Idle";
   // camera: follows behind, eases toward the player's back while walking
   if (pl.inCar && !camDrag && !camHold && Math.abs(myCar.v) > .5) { let d = (myCar.h + Math.PI) - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d*Math.min(1, dt*2.2); }
   if (!pl.inCar && !camDrag && pl.sp > .3) { let d = (pl.h + Math.PI) - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d*Math.min(1, dt*1.2); }
@@ -2224,7 +2242,7 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   if (inside) cd = Math.min(cd, 3.6);
   const eye = [tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*cd, Math.max(pl.y + .4, tgt[1] + Math.sin(camPitch)*cd), tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*cd]; if (inside) eye[1] = Math.min(eye[1], INTERIOR.ceilY(pl.x, pl.z) + (pl.y > 1 ? 3 : 0) - .2);
   if (inside) { const B = INTERIOR.bounds; eye[0] = Math.max(B[0], Math.min(B[2], eye[0])); eye[2] = Math.max(B[1], Math.min(B[3], eye[2])); }
-  const VP = mul((inside ? persp(58*Math.PI/180, W/H, .08, 70) : persp(55*Math.PI/180, W/H, .1, 1600)), lookAt(eye, tgt));
+  const VP = mul((inside ? persp(58*Math.PI/180, W/H, .15, 70) : persp(55*Math.PI/180, W/H, .1, 1600)), lookAt(eye, tgt));
   const n = night;
   // animate everyone first (the shadow pass needs their poses)
   const live = pl.inCar ? [] : [{ h: hero, sks: hero.skins }];
@@ -2234,7 +2252,7 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   frameNo++; if (frameNo > 3 && frameNo % 3 === 0) { const nb = NPCS.find(q => !q.h); if (nb) buildNPC(nb); }
   for (const nn of NPCS.concat(COPS)) { if (nn.veh === undefined) { if (!nn.down) updateNPC(nn, dt); } if (!nn.h || nn.inCar) continue; const dx = nn.x - eye[0], dz = nn.z - eye[2], dd = Math.hypot(dx, dz); nn.vis = dd < 70 && !(dd > 4 && (dx*fx2 + dz*fz2) < 0);
     if (!nn.vis) continue; const far = PHONE && dd > 28 && (frameNo + nn.off*7 | 0) % 3; if (!far) { pose(t + nn.off, nn.P, nn.down ? "Idle" : nn.move, nn.t0); if (nn.P.flash) nn.P.flash.visible = nn.flashT > t; nn.h.t = [nn.x, nn.y + (nn.down ? .12 : 0), nn.z]; nn.h.r[1] = nn.down ? nn.fdir : nn.hd; nn.h.r[0] = nn.down ? Math.min(1.45, (t - nn.downT)*6) : 0; computeWorld(nn.h, ident()); setS(nn.h); nn.skins.forEach(updateSkin); } live.push({ h: nn.h, sks: nn.skins, nn }); }
-  if (inside) { live.push({ h: INTERIOR.root, sks: [], car: true }); live.push({ h: INTERIOR.doors, sks: [], car: true }); }
+  if (inside) { live.push({ h: INTERIOR.root, sks: [], car: true }); live.push({ h: INTERIOR.doors, sks: [], car: true }); live.push({ h: INTERIOR.decal, sks: [], car: true, decal: true }); }
   let LVP = null; if (SH && n < .98 && !inside) LVP = SH.render(pl.x, pl.z, live.filter(c => !c.car || c.near));
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   if (inside) { gl.clearColor(.05, .05, .06, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
@@ -2242,12 +2260,12 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   gl.useProgram(prog); [A.P, A.N, A.U].forEach(a => gl.enableVertexAttribArray(a)); gl.uniform1i(U.uT, 0); gl.uniform1f(dimLoc, 1 - .62*n);
   gl.uniformMatrix4fv(CU("uShVP"), false, LVP || ident()); gl.uniform1f(CU("uShOn"), LVP ? 1 : 0); gl.uniform1i(CU("uShTex"), 2); { const dx = eye[0] - tgt[0], dz = eye[2] - tgt[2], l = Math.hypot(dx, dz) || 1, v = [dx/l*.7, 1.1, dz/l*.7], n0 = Math.hypot(...v); gl.uniform3fv(CU("uSunD"), inside ? v.map(q => q/n0) : SUND); } gl.uniform1f(CU("uNightC"), inside ? 0 : n); if (inside) gl.uniform1f(dimLoc, 1.12);
   gl.uniformMatrix4fv(U.uVP, false, VP); gl.uniform3fv(U.uEye, eye); gl.uniform1f(CU("uIn"), inside ? 1 : 0); if (inside) { const [pl4, pc3] = INTERIOR.lightsNear((eye[0] + tgt[0])/2, (eye[1] + tgt[1])/2, (eye[2] + tgt[2])/2); gl.uniform4fv(CU("uPL[0]"), pl4); gl.uniform3fv(CU("uPC[0]"), pc3); gl.uniform1f(CU("uNL"), PHONE ? 6 : 12); }
-  for (const c of live) { const h = c.h; if (c.car) { drawTree(h); continue; } shadowN.t = [h.t[0], h.t[1] + .02, h.t[2]]; computeWorld(shadowN, ident());
+  for (const c of live) { const h = c.h; if (c.decal) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -4); drawTree(h); gl.disable(gl.POLYGON_OFFSET_FILL); continue; } if (c.car) { drawTree(h); continue; } shadowN.t = [h.t[0], h.t[1] + .02, h.t[2]]; computeWorld(shadowN, ident());
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); drawTree(shadowN); gl.disable(gl.BLEND); gl.depthMask(true);
     drawTree(h); const I = ident(); for (const m of c.sks) drawMesh(m, I); }
   if (inside) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); drawTree(INTERIOR.shade); gl.blendColor(0, 0, 0, .28); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); drawTree(INTERIOR.glass); drawTree(INTERIOR.doorGlass); gl.disable(gl.BLEND); gl.depthMask(true); }
   [A.P, A.N, A.U].forEach(a => gl.disableVertexAttribArray(a));
-  if (actB) { const k = actState(); actB.hidden = !k; if (k) actB.textContent = { get: "Choose a car (E)", enter: "Get in (E)", exit: "Get out (E)", jack: "Steal car (E)" }[k]; }
+  if (actB) { const k = actState(); actB.hidden = !k; if (k) actB.textContent = { get: "Choose a car (E)", enter: "Get in (E)", exit: "Get out (E)", jack: "Steal car (E)", sit: "Sit (E)", stand: "Stand up (E)" }[k]; }
   if (((t*4)|0) % 2 === 0 && t > doorMsgT) label.textContent = inside ? INTERIOR.room(pl.x, pl.z) : streetName(pl.x, pl.z);
   requestAnimationFrame(frame); }
 function drawMesh(g, M) {

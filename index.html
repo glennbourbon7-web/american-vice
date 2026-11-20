@@ -768,13 +768,13 @@ const VS = `attribute vec3 aP, aN, aT; attribute vec2 aU; uniform mat4 uVP; vary
 void main(){ vP = aP; vN = aN; vT = aT; vU = aU; gl_Position = uVP*vec4(aP, 1.); }`;
 
 const FS = `precision highp float; varying vec3 vP, vN, vT; varying vec2 vU;
-uniform vec3 uEye, uSun; uniform sampler2D uFac, uRooms; uniform float uNight, uKind, uOpenY, uOpenMin; uniform vec2 uCell, uTile; uniform vec3 uCol, uTint; uniform vec4 uAl[32]; uniform vec3 uSky; uniform mat4 uShVP; uniform sampler2D uShTex; uniform float uShOn;
+uniform vec3 uEye, uSun; uniform sampler2D uFac, uRooms; uniform float uNight, uKind, uOpenY, uOpenMin; uniform vec2 uCell, uTile; uniform vec3 uCol, uTint; uniform vec4 uAl[32]; uniform vec3 uSky; uniform mat4 uShVP; uniform sampler2D uShTex; uniform float uShOn, uShTexel;
 float h1(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7)))*43758.5453); }
 vec3 sky(float y){ vec3 dayS = mix(vec3(.78,.84,.9), vec3(.32,.52,.78), clamp(y*1.4, 0., 1.)), nightS = mix(vec3(.16,.13,.2), vec3(.03,.05,.12), clamp(y*1.6, 0., 1.));
   if (y < 0.) { dayS = vec3(.42,.43,.42); nightS = vec3(.06,.06,.07); } return mix(dayS, nightS, uNight); }
 float shadowAt(vec3 p, vec3 n){ if (uShOn < .5) return 1.; vec4 q = uShVP*vec4(p + n*.18, 1.); vec3 c = q.xyz/q.w*.5 + .5;
   if (c.x < 0. || c.x > 1. || c.y < 0. || c.y > 1. || c.z > 1.) return 1.; float s = 0.;
-  for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) s += step(c.z - .00025, texture2D(uShTex, c.xy + (vec2(float(i), float(j)) - .5)*1.6/2048.).r);
+  for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) s += step(c.z - .00025, texture2D(uShTex, c.xy + (vec2(float(i), float(j)) - .5)*1.6*uShTexel).r);
   return s*.25; }
 vec4 shade(){
   vec3 N = normalize(vN), T = normalize(vT), B = vec3(0., 1., 0.), V = normalize(vP - uEye);
@@ -905,11 +905,11 @@ function pool(G, x, z, r, y) { const P = [[x - r, y, z - r, 0, 0], [x + r, y, z 
 /* ---------- layout: 6 x 5 blocks of 80 m ---------- */
 let sd2pre = 0;
 let sd2 = 11; const R = () => (sd2 = sd2*16807 % 2147483647)/2147483647, pick = a => a[R()*a.length|0];
-const BLK = 80, XR = [10, 10, 10, 18, 10, 10, 10], ZR = [10, 10, 16, 10, 10, 10];   // road widths curb-to-curb; Exchange St = XR[3], Calloway Ave = ZR[2]
+const BLK = 80, XR = [10, 10, 18, 10, 10], ZR = [10, 10, 16, 10, 10];   // road widths curb-to-curb; Exchange St = XR[3], Calloway Ave = ZR[2]
 function lay(rd) { const out = { roads: [], blocks: [] }; let p = 0; for (let i = 0; i < rd.length; i++) { out.roads.push([p, p + rd[i], rd[i]]); p += rd[i]; if (i < rd.length - 1) { out.blocks.push([p, p + BLK]); p += BLK; } } out.total = p; return out; }
 const LX = lay(XR), LZ = lay(ZR), OX = -LX.total/2, OZ = -LZ.total/2;
 LX.roads.forEach(r => { r[0] += OX; r[1] += OX; }); LX.blocks.forEach(b => { b[0] += OX; b[1] += OX; }); LZ.roads.forEach(r => { r[0] += OZ; r[1] += OZ; }); LZ.blocks.forEach(b => { b[0] += OZ; b[1] += OZ; });
-const EX = LX.roads[3], CAL = LZ.roads[2];
+const EX = LX.roads[2], CAL = LZ.roads[2];
 const CX = (EX[0] + EX[1])/2, CZ = (CAL[0] + CAL[1])/2;
 const G = {}; const g = k => G[k] || (G[k] = geo());
 const SOLID = [], ALLEYS = [], LAMPS = [], SIGNALS = [], TREES = [];
@@ -956,12 +956,12 @@ function dumpster(px, pz, rot, v) {
 }
 
 // ground: asphalt everywhere, plus a big outer field
-box(g("asph"), LX.roads[0][0] - 400, -1, LZ.roads[0][0] - 400, LX.roads[6][1] + 400, 0, LZ.roads[5][1] + 400);
+box(g("asph"), LX.roads[0][0] - 400, -1, LZ.roads[0][0] - 400, LX.roads[4][1] + 400, 0, LZ.roads[4][1] + 400);
 
 // ---- blocks: sidewalks, curbs, alleys, lots ----
 LX.blocks.forEach((bx, i) => LZ.blocks.forEach((bz, j) => {
   const [x0, x1] = bx, [z0, z1] = bz;
-  const swW = i === 2 ? [4, 6] : i === 3 ? [6, 4] : [4, 4], swZ = j === 1 ? [4, 6] : j === 2 ? [6, 4] : [4, 4];   // wider sidewalks on the avenues
+  const swW = i === 1 ? [4, 6] : i === 2 ? [6, 4] : [4, 4], swZ = j === 1 ? [4, 6] : j === 2 ? [6, 4] : [4, 4];   // wider sidewalks on the avenues
   const sx0 = x0 + swW[0], sx1 = x1 - swW[1], sz0 = z0 + swZ[0], sz1 = z1 - swZ[1];
   box(g("pave"), x0, 0, z0, x1, SWY, z1);                                       // sidewalk slab (whole block)
   box(g("curb"), x0, 0, z0 - .01, x1, SWY + .01, z0 + .25); box(g("curb"), x0, 0, z1 - .25, x1, SWY + .01, z1 + .01);
@@ -1025,11 +1025,11 @@ function streetlamp(x, z, ox, oz) { box(g("pole"), x - .09, SWY, z - .09, x + .0
 
 // ---- roads: markings, crosswalks, manholes, signals ----
 const mark = (k, x0, z0, x1, z1) => box(g(k), Math.min(x0, x1), .005, Math.min(z0, z1), Math.max(x0, x1), .02, Math.max(z0, z1));
-const zSpan = [LZ.roads[0][0], LZ.roads[5][1]], xSpan = [LX.roads[0][0], LX.roads[6][1]];
+const zSpan = [LZ.roads[0][0], LZ.roads[4][1]], xSpan = [LX.roads[0][0], LX.roads[4][1]];
 // north-south roads, segment by segment between intersections
 LX.roads.forEach(([r0, r1, rw], i) => { const c = (r0 + r1)/2;
   LZ.blocks.forEach(([b0, b1]) => {
-    if (i === 3) { box(g("median"), c - 1.2, 0, b0 + 4, c + 1.2, .25, b1 - 4); for (let z = b0 + 8; z < b1 - 6; z += 16) TREES.push(["palm", c, z, .25]);           // Exchange St median planter
+    if (i === 2) { box(g("median"), c - 1.2, 0, b0 + 4, c + 1.2, .25, b1 - 4); for (let z = b0 + 8; z < b1 - 6; z += 16) TREES.push(["palm", c, z, .25]);           // Exchange St median planter
       for (const s of [-1, 1]) for (let z = b0 + 1; z < b1 - 2; z += 6) mark("white", c + s*4.75 - .06, z, c + s*4.75 + .06, z + 3); }
     else { for (const s of [-1, 1]) mark("yellow", c + s*.12 - .06, b0 + 1, c + s*.12 + .06, b1 - 1); }
     for (const [zz, dir] of [[b0, 1], [b1, -1]]) { for (let x = r0 + .6; x < r1 - .8; x += 1.2) mark("white", x, zz + dir*.6, x + .6, zz + dir*3.6); mark("white", r0 + .3, zz + dir*4.2, r1 - .3, zz + dir*4.6); }   // crosswalk + stop line
@@ -1041,7 +1041,7 @@ LZ.roads.forEach(([r0, r1, rw], j) => { const c = (r0 + r1)/2;
     for (const [xx, dir] of [[b0, 1], [b1, -1]]) { for (let z = r0 + .6; z < r1 - .8; z += 1.2) mark("white", xx + dir*.6, z, xx + dir*3.6, z + .6); mark("white", xx + dir*4.2, r0 + .3, xx + dir*4.6, r1 - .3); }
   }); });
 // traffic signals where an avenue crosses: mast pole on two corners, heads facing both directions
-LX.roads.forEach((rx, i) => LZ.roads.forEach((rz, j) => { if (i !== 3 && j !== 2) { if (R() < .5) { const x = rx[1] + 1, z = rz[1] + 1; box(g("pole"), x - .05, SWY, z - .05, x + .05, SWY + 2.4, z + .05); box(g("stop"), x - .4, SWY + 2.1, z - .02, x + .4, SWY + 2.8, z + .04); } return; }
+LX.roads.forEach((rx, i) => LZ.roads.forEach((rz, j) => { if (i !== 2 && j !== 2) { if (R() < .5) { const x = rx[1] + 1, z = rz[1] + 1; box(g("pole"), x - .05, SWY, z - .05, x + .05, SWY + 2.4, z + .05); box(g("stop"), x - .4, SWY + 2.1, z - .02, x + .4, SWY + 2.8, z + .04); } return; }
   for (const [x, z, sx, sz] of [[rx[0] - 1, rz[0] - 1, 1, 1], [rx[1] + 1, rz[1] + 1, -1, -1]]) {
     box(g("pole"), x - .14, SWY, z - .14, x + .14, SWY + 6.5, z + .14);
     const ex = x + sx*(rx[2]*.55), ez = z + sz*(rz[2]*.55);
@@ -1054,6 +1054,15 @@ LX.roads.forEach((rx, i) => LZ.roads.forEach((rz, j) => { if (i !== 3 && j !== 2
       box(g("EW" + k), x - p - .01, SWY + yy - .1, hz - .1, x - p + .01, SWY + yy + .1, hz + .1); box(g("EW" + k), x + p - .01, SWY + yy - .1, hz - .1, x + p + .01, SWY + yy + .1, hz + .1); }
   } }));
 
+// ---- distant skyline: plain textured boxes beyond the edge (no detail, no shadows) ----
+{ const X0 = LX.roads[0][0], X1 = LX.roads[LX.roads.length - 1][1], Z0 = LZ.roads[0][0], Z1 = LZ.roads[LZ.roads.length - 1][1];
+  const ring = (ax, az, bx, bz, ox, oz) => { const L = Math.hypot(bx - ax, bz - az); let t = 0;
+    while (t < L) { const w = 22 + R()*26, d = 22 + R()*26, gap = 6 + R()*10, f = (t + w/2)/L, x = ax + (bx - ax)*f, z = az + (bz - az)*f;
+      for (const row of [0, 1]) { const off = 14 + row*55 + R()*12, cx = x + ox*(off + d/2), cz = z + oz*(off + d/2), dist = Math.hypot(cx - CX, cz - CZ);
+        const hgt = row ? 60 + R()*170 : 25 + R()*(dist < 260 ? 140 : 70), k = R() < .55 ? "farO" : R() < .5 ? "farR" : R() < .5 ? "farB" : "farL";
+        box(g(k), cx - w/2, 0, cz - d/2, cx + w/2, hgt, cz + d/2); box(g("farTop"), cx - w/2 - .3, hgt, cz - d/2 - .3, cx + w/2 + .3, hgt + .6, cz + d/2 + .3); }
+      t += w + gap; } };
+  ring(X0 - 60, Z0, X1 + 60, Z0, 0, -1); ring(X0 - 60, Z1, X1 + 60, Z1, 0, 1); ring(X0, Z0, X0, Z1, -1, 0); ring(X1, Z0, X1, Z1, 1, 0); }
 const M = {}; for (const k in G) M[k] = up(G[k]);
 const aP = A("aP"), aN = A("aN"), aT = A("aT"), aU = A("aU");
 gl.useProgram(pr); gl.uniform1i(U("uFac"), 0); gl.uniform1i(U("uRooms"), 1);
@@ -1068,8 +1077,8 @@ const C = { white: [.86, .86, .82], yellow: [.86, .7, .2], curb: [.62, .61, .58]
   awnR: [.55, .1, .1], awnG: [.1, .32, .2], awnB: [.12, .2, .45], awnK: [.12, .12, .13] };
 return {
   SOLID, LX, LZ, CX, CZ, ALLEYS, TREES,
-  shadow(m, on) { gl.useProgram(pr); gl.uniformMatrix4fv(U("uShVP"), false, m); gl.uniform1i(U("uShTex"), 2); gl.uniform1f(U("uShOn"), on); },
-  depth(fn) { for (const k in M) if (!/^(asph|pave|alley|pool|white|yellow|dtr|dec0|dec1|lamp)$/.test(k)) fn(M[k]); },
+  shadow(m, on) { gl.useProgram(pr); gl.uniformMatrix4fv(U("uShVP"), false, m); gl.uniform1i(U("uShTex"), 2); gl.uniform1f(U("uShOn"), on); gl.uniform1f(U("uShTexel"), PHONE ? 1/1024 : 1/2048); },
+  depth(fn) { for (const k in M) if (!/^(asph|pave|alley|pool|white|yellow|dtr|dec0|dec1|lamp|far.*)$/.test(k)) fn(M[k]); },
   // ground height at a point (sidewalks raised)
   groundY(x, z) { for (const bx of LX.blocks) if (x > bx[0] && x < bx[1]) for (const bz of LZ.blocks) if (z > bz[0] && z < bz[1]) return SWY; return 0; },
   draw(VP, eye, n, t) {
@@ -1088,9 +1097,9 @@ return {
     for (const k of ["R", "Y", "G"]) { drawM(M["NS" + k], null, 3, null, null, k === NSs ? LC[k] : OFF); drawM(M["EW" + k], null, 3, null, null, k === EWs ? LC[k] : OFF); }
     drawM(M.lobbyIn, limestone, 4, null, [3, 3.8], n > .5 ? [1.5, 1.3, 1] : [.95, .93, .9]);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); drawM(M.lobby, lobby, 1, [3, 8], [3, 8]); gl.disable(gl.BLEND);
-    drawM(M.office, office, 0); drawM(M.crown, crown, 0, [3, 9], [6, 9]);
-    gl.uniform3fv(U("uTint"), [.36, .5, .46]); drawM(M.ribbon, ribbon, 0); drawM(M.ribbonCrown, ribbonCrown, 0, [3, 7], [4, 7]);
-    gl.uniform3fv(U("uTint"), [.5, .46, .4]); drawM(M.brick, brick, 0, [3, 3.8], [3, 3.8]); drawM(M.limestone, limestone, 0, [3, 3.8], [3, 3.8]);
+    drawM(M.office, office, 0); drawM(M.crown, crown, 0, [3, 9], [6, 9]); drawM(M.farO, office, 0); drawM(M.farTop, null, 2, null, null, [.5, .49, .47]);
+    gl.uniform3fv(U("uTint"), [.36, .5, .46]); drawM(M.ribbon, ribbon, 0); drawM(M.ribbonCrown, ribbonCrown, 0, [3, 7], [4, 7]); drawM(M.farR, ribbon, 0);
+    gl.uniform3fv(U("uTint"), [.5, .46, .4]); drawM(M.brick, brick, 0, [3, 3.8], [3, 3.8]); drawM(M.limestone, limestone, 0, [3, 3.8], [3, 3.8]); drawM(M.farB, brick, 0, [3, 3.8], [3, 3.8]); drawM(M.farL, limestone, 0, [3, 3.8], [3, 3.8]);
     if (n > .05) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false); drawM(M.pool, poolT, 5, null, null, [.55*n, .45*n, .3*n]); gl.depthMask(true); gl.disable(gl.BLEND); }
     [aP, aN, aT, aU].forEach(a => gl.disableVertexAttribArray(a));
   } };
@@ -1215,8 +1224,8 @@ return {
 })();
 
 /* ---------- game: walk the Finance District ---------- */
-let W = 0, H = 0;
-function size() { const dpr = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight; canvas.width = W*dpr; canvas.height = H*dpr; gl.viewport(0, 0, canvas.width, canvas.height); }
+let W = 0, H = 0; const PHONE = matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 820;
+function size() { const dpr = Math.min(window.devicePixelRatio || 1, PHONE ? 1.5 : 2); W = innerWidth; H = innerHeight; canvas.width = W*dpr; canvas.height = H*dpr; gl.viewport(0, 0, canvas.width, canvas.height); }
 window.addEventListener("resize", size); size();
 const dimLoc = gl.getUniformLocation(prog, "uDim");
 /* ---------- lighting: warm low sun, blue sky, haze, real shadows ---------- */
@@ -1234,7 +1243,7 @@ const SKY = (function () { const vs = `attribute vec2 aQ; varying vec2 vQ; void 
   return { draw(VP, eye, n) { gl.useProgram(p); gl.depthMask(false); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(aQ); gl.vertexAttribPointer(aQ, 2, gl.FLOAT, false, 0, 0);
     gl.uniformMatrix4fv(gl.getUniformLocation(p, "uInv"), false, inv4(new Float32Array(VP))); gl.uniform3fv(gl.getUniformLocation(p, "uEye"), eye); gl.uniform3fv(gl.getUniformLocation(p, "uSunD"), SUND);
     gl.uniform3fv(gl.getUniformLocation(p, "uHaze"), HAZE(n)); gl.uniform1f(gl.getUniformLocation(p, "uN"), n); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.disableVertexAttribArray(aQ); gl.depthMask(true); } }; })();
-const SH = (function () { const ext = gl.getExtension("WEBGL_depth_texture"); if (!ext) return null; const S = 2048, R = 110;
+const SH = (function () { const ext = gl.getExtension("WEBGL_depth_texture"); if (!ext) return null; const S = PHONE ? 1024 : 2048, R = PHONE ? 80 : 110;
   const dt = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, dt); gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, S, S, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
   [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]].forEach(([k, v]) => gl.texParameteri(gl.TEXTURE_2D, k, v));
   const ct = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, ct); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -1291,8 +1300,8 @@ let frameNo = 0;
 const OFF = 2.8, NBX = CITY.LX.blocks.length, NBZ = CITY.LZ.blocks.length;
 const cornerPt = (bi, bj, ex, ez) => { const bx = CITY.LX.blocks[bi], bz = CITY.LZ.blocks[bj]; return [ex ? bx[1] - OFF : bx[0] + OFF, ez ? bz[1] - OFF : bz[0] + OFF]; };
 const RING = [[0, 0], [1, 0], [1, 1], [0, 1]];
-const START = [[3, 2], [3, 2], [2, 2], [2, 2], [3, 1], [3, 1], [2, 1], [2, 1], [3, 2], [2, 2]];
-NPCS.forEach((n, i) => { const [bi, bj] = START[i]; n.blk = [bi, bj]; n.cor = [0, 1, 3, 2][(bi === 3 ? 0 : 1) + (bj === 2 ? 0 : 2)]; if (n.dir < 0) n.cor = (n.cor + 1) % 4; const a = cornerPt(bi, bj, ...RING[n.cor]), b = cornerPt(bi, bj, ...RING[(n.cor + 1) % 4]);
+const START = [[2, 2], [2, 2], [1, 2], [1, 2], [2, 1], [2, 1], [1, 1], [1, 1], [2, 2], [1, 2]];
+NPCS.forEach((n, i) => { const [bi, bj] = START[i]; n.blk = [bi, bj]; n.cor = [0, 1, 3, 2][(bi === 2 ? 0 : 1) + (bj === 2 ? 0 : 2)]; if (n.dir < 0) n.cor = (n.cor + 1) % 4; const a = cornerPt(bi, bj, ...RING[n.cor]), b = cornerPt(bi, bj, ...RING[(n.cor + 1) % 4]);
   const f = n.dir < 0 ? .96 - .1*(i % 3) : .04 + .1*(i % 3); n.x = a[0] + (b[0] - a[0])*f; n.z = a[1] + (b[1] - a[1])*f; n.cor = (n.cor + n.dir + 4) % 4; n.tgt = b; });
 window.__dbg = () => ({ n: NPCS.map(n => [n.d.name, +n.x.toFixed(1), +n.z.toFixed(1), n.move, n.skins.length]), pl: [pl.x, pl.z] });
 function nextWaypoint(n) { const [ex, ez] = RING[n.cor], [bi, bj] = n.blk, r = ((n.d.name.length*7 + Math.floor(performance.now()/1000)) % 10)/10;
@@ -1314,7 +1323,7 @@ function updateNPC(n, dt) {
   n.x += Math.sin(n.hd)*n.sp*dt; n.z += Math.cos(n.hd)*n.sp*dt; n.y += (CITY.groundY(n.x, n.z) - n.y)*Math.min(1, dt*14);
   n.move = n.sp > .3 ? "Walk" : "Idle"; }
 // player starts on the Exchange St sidewalk, by Calloway Ave
-const pl = { x: CITY.LX.roads[3][1] + 3, z: CITY.LZ.roads[2][1] + 8, y: .15, h: Math.PI, sp: 0 };
+const pl = { x: CITY.LX.roads[2][1] + 3, z: CITY.LZ.roads[2][1] + 8, y: .15, h: Math.PI, sp: 0 };
 let camYaw = Math.PI*.15 + Math.PI, camPitch = .28, camDist = 4.6, night = 0, nightT = 0;
 const keys = {}; addEventListener("keydown", e => { keys[e.code] = true; if (e.code === "KeyF") punch(); if (e.code === "KeyN") setNight(!nightT);
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault(); });
@@ -1335,10 +1344,10 @@ const up_ = e => { if (e.pointerId === stick.id) { stick.id = null; stick.x = st
 canvas.addEventListener("pointerup", up_); canvas.addEventListener("pointercancel", up_);
 canvas.addEventListener("wheel", e => { e.preventDefault(); camDist = Math.max(2.2, Math.min(14, camDist*(1 + e.deltaY*.001))); }, { passive: false });
 const inBox = (x, z, b, r) => x > b[0] - r && x < b[2] + r && z > b[1] - r && z < b[3] + r;
-function blocked(x, z) { for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; return x < L.roads[0][0] || x > L.roads[6][1] || z < Z.roads[0][0] || z > Z.roads[5][1]; }
+function blocked(x, z) { for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; return x < L.roads[0][0] || x > L.roads[L.roads.length - 1][1] || z < Z.roads[0][0] || z > Z.roads[Z.roads.length - 1][1]; }
 gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
 let last = 0; const label = document.getElementById("where");
-function streetName(x, z) { const L = CITY.LX, Z = CITY.LZ, NS = ["1st St", "2nd St", "3rd St", "Exchange St", "Bourse St", "Mint St", "Harbor St"], EW = ["Ledger Ave", "Tower Ave", "Calloway Ave", "Bond Ave", "Market Ave", "Union Ave"];
+function streetName(x, z) { const L = CITY.LX, Z = CITY.LZ, NS = ["2nd St", "3rd St", "Exchange St", "Bourse St", "Mint St"], EW = ["Ledger Ave", "Tower Ave", "Calloway Ave", "Bond Ave", "Market Ave"];
   let a = null, b = null; L.roads.forEach((r, i) => { if (x > r[0] - 6 && x < r[1] + 6) a = NS[i]; }); Z.roads.forEach((r, i) => { if (z > r[0] - 6 && z < r[1] + 6) b = EW[i]; });
   return a && b ? a + " & " + b : a || b || "Finance District"; }
 function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); last = t;
@@ -1368,7 +1377,7 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   const fx2 = tgt[0] - eye[0], fz2 = tgt[2] - eye[2];
   frameNo++; if (frameNo > 3 && frameNo % 3 === 0) { const nb = NPCS.find(q => !q.h); if (nb) buildNPC(nb); }
   for (const nn of NPCS) { updateNPC(nn, dt); if (!nn.h) continue; const dx = nn.x - eye[0], dz = nn.z - eye[2], dd = Math.hypot(dx, dz); nn.vis = dd < 70 && !(dd > 4 && (dx*fx2 + dz*fz2) < 0);
-    if (!nn.vis) continue; pose(t + nn.off, nn.P, nn.move, nn.t0); nn.h.t = [nn.x, nn.y, nn.z]; nn.h.r[1] = nn.hd; computeWorld(nn.h, ident()); setS(nn.h); nn.skins.forEach(updateSkin); live.push({ h: nn.h, sks: nn.skins, nn }); }
+    if (!nn.vis) continue; const far = PHONE && dd > 28 && (frameNo + nn.off*7 | 0) % 3; if (!far) { pose(t + nn.off, nn.P, nn.move, nn.t0); nn.h.t = [nn.x, nn.y, nn.z]; nn.h.r[1] = nn.hd; computeWorld(nn.h, ident()); setS(nn.h); nn.skins.forEach(updateSkin); } live.push({ h: nn.h, sks: nn.skins, nn }); }
   let LVP = null; if (SH && n < .98) LVP = SH.render(pl.x, pl.z, live);
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   SKY.draw(VP, eye, n);

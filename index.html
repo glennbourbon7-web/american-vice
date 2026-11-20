@@ -72,7 +72,7 @@ const smooth = (a, b, x) => { const t = clamp((x-a)/(b-a)); return t*t*(3-2*t); 
 const VS = `attribute vec3 aP; attribute vec3 aN; attribute vec2 aU; uniform mat4 uVP, uM; varying vec3 vN; varying vec2 vU; varying vec3 vW;
 void main(){ vec4 w = uM*vec4(aP,1.0); vW = w.xyz; vN = mat3(uM)*aN; vU = aU; gl_Position = uVP*w; }`;
 const FS = (FLAT ? "#extension GL_OES_standard_derivatives : enable\n" : "") + `precision mediump float; varying vec3 vN; varying vec2 vU; varying vec3 vW;
-uniform vec3 uC, uEye; uniform sampler2D uT; uniform float uUseT, uShine, uUnlit, uCut, uFlat, uDim, uShOn, uNightC; uniform vec3 uSunD; uniform highp mat4 uShVP; uniform sampler2D uShTex;
+uniform vec3 uC, uEye; uniform sampler2D uT; uniform float uUseT, uShine, uUnlit, uCut, uFlat, uDim, uShOn, uNightC, uIn; uniform vec4 uPL[12]; uniform vec3 uPC[12]; uniform vec3 uSunD; uniform highp mat4 uShVP; uniform sampler2D uShTex;
 void main(){ vec4 tx = uUseT > 0.5 ? texture2D(uT, vU) : vec4(1.0); if (uCut > 0.5 && tx.a < 0.5) discard;
   vec3 base = uC*tx.rgb; if (uUnlit > 0.5) { gl_FragColor = vec4(base, 1.0); return; }
   vec3 V = normalize(uEye - vW); vec3 N = normalize(vN);` + (FLAT ? `
@@ -83,7 +83,7 @@ void main(){ vec4 tx = uUseT > 0.5 ? texture2D(uT, vU) : vec4(1.0); if (uCut > 0
   vec3 amb = mix(vec3(0.20,0.19,0.18), vec3(0.34,0.40,0.50), hemi)*mix(1.0, 0.3, uNightC);
   float rim = pow(1.0-max(dot(N,V),0.0), 4.0)*0.05;
   float spec = pow(max(dot(N, normalize(L+V)),0.0), 30.0)*uShine;
-  vec3 col = base*(amb + vec3(1.0,0.9,0.74)*1.05*d*S*(1.0 - uNightC) + d2*0.6) + rim + spec*S;
+  vec3 col = base*(amb + vec3(1.0,0.9,0.74)*1.05*d*S*(1.0 - uNightC) + d2*0.6) + rim + spec*S; if (uIn > 0.5) { vec3 acc = vec3(0.0); for (int i = 0; i < 12; i++) { vec3 dl = uPL[i].xyz - vW; float dd = max(length(dl), 0.001); float at = clamp(1.0 - dd/uPL[i].w, 0.0, 1.0); at *= at; acc += uPC[i]*at*(0.3 + 0.7*max(dot(N, dl/dd), 0.0)); vec3 hv = normalize(dl/dd + V); acc += uPC[i]*at*pow(max(dot(N, hv), 0.0), 40.0)*uShine*0.8; } float hy = vW.y < 3.0 ? vW.y : abs(vW.y - 3.2); float ao = N.y > 0.7 ? 1.0 : mix(0.62, 1.0, smoothstep(0.0, 0.7, hy)); col = base*(mix(vec3(0.07,0.075,0.09), vec3(0.15,0.155,0.17), hemi) + acc)*ao + rim*0.25; }
   gl_FragColor = vec4(col*uDim, 1.0); }`;
 function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
 const prog = gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog); gl.useProgram(prog);
@@ -1471,7 +1471,7 @@ const INTERIOR = (function () {
   const cmp = (a, b) => { const R = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) R.push(a.R[i*3]*b.R[j] + a.R[i*3 + 1]*b.R[3 + j] + a.R[i*3 + 2]*b.R[6 + j]); return { R, t: ap(a, b.t) }; };
   /* ---------- batcher: one mesh per material, split at 60k vertices ---------- */
   const BATCH = {}; let texId = 1; const TID = new Map(); const tid = t => { if (!t) return 0; if (!TID.has(t)) TID.set(t, texId++); return TID.get(t); };
-  function put(m, g, col, o = {}) { const k = col + "|" + tid(o.tex) + "|" + (o.shine || 0) + "|" + (o.unlit ? 1 : 0) + "|" + (o.cut ? 1 : 0);
+  function put(m, g, col, o = {}) { const k = col + "|" + tid(o.tex) + "|" + (o.shine || 0) + "|" + (o.unlit ? 1 : 0) + "|" + (o.cut ? 1 : 0) + "|" + (o.glass ? 1 : 0) + "|" + (o.shade ? 1 : 0);
     let B = BATCH[k]; if (!B) B = BATCH[k] = { col, o, parts: [{ p: [], n: [], u: [], i: [] }] }; let P = B.parts[B.parts.length - 1];
     if (P.p.length/3 + g.p.length/3 > 60000) { P = { p: [], n: [], u: [], i: [] }; B.parts.push(P); }
     const base = P.p.length/3; for (let v = 0; v < g.p.length/3; v++) { const q = ap(m, [g.p[v*3], g.p[v*3 + 1], g.p[v*3 + 2]]), nn = apN(m, [g.n[v*3], g.n[v*3 + 1], g.n[v*3 + 2]]); P.p.push(...q); P.n.push(...nn); P.u.push(g.u[v*2], g.u[v*2 + 1]); }
@@ -1539,10 +1539,16 @@ const INTERIOR = (function () {
   T.signRich = tex(128, 32, (g, w, h) => { g.fillStyle = "#2b2b2b"; g.fillRect(0, 0, w, h); g.fillStyle = "#e8e4d8"; g.font = "bold 13px Arial"; g.textAlign = "center"; g.fillText("RICHIE · NEWS DIRECTOR", w/2, 21); });
   T.onair = tex(128, 48, (g, w, h) => { g.fillStyle = "#330000"; g.fillRect(0, 0, w, h); g.fillStyle = "#ff3a30"; g.font = "bold 28px Arial"; g.textAlign = "center"; g.fillText("ON AIR", w/2, 34); });
   T.exit = tex(128, 48, (g, w, h) => { g.fillStyle = "#00aa44"; g.fillRect(0, 0, w, h); g.fillStyle = "#ffffff"; g.font = "bold 30px Arial"; g.textAlign = "center"; g.fillText("EXIT", w/2, 35); });
-  [T.carpet, T.stone, T.ceil, T.fabric, T.wedge, T.slats, T.wood].forEach(rep);
+  [T.carpet, T.stone, T.ceil, T.fabric, T.wedge, T.slats, T.wood, T.brushed, T.plastic, T.laminate, T.marble, T.leather].forEach(rep);
+  T.brushed = tex(128, 128, (g, w, h) => { g.fillStyle = "#9ba1a8"; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y++) { g.fillStyle = `rgba(${rI() < .5 ? "255,255,255" : "0,0,0"},${.04 + rI()*.08})`; g.fillRect(0, y, w, 1); } });
+  T.plastic = tex(64, 64, (g, w, h) => { g.fillStyle = "#c8c8c8"; g.fillRect(0, 0, w, h); for (let k = 0; k < 900; k++) { g.fillStyle = rI() < .5 ? "rgba(0,0,0,.06)" : "rgba(255,255,255,.08)"; g.fillRect(rI()*w, rI()*h, 1, 1); } });
+  T.laminate = tex(256, 128, (g, w, h) => { g.fillStyle = "#e9e7e1"; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(150,140,125,${rI()*.06})`; g.fillRect(0, y, w, 1); } for (let k = 0; k < 30; k++) { g.fillStyle = "rgba(0,0,0,.05)"; g.fillRect(rI()*w, rI()*h, 10 + rI()*30, 1); } });
+  T.marble = tex(256, 256, (g, w, h) => { g.fillStyle = "#f1efea"; g.fillRect(0, 0, w, h); g.lineCap = "round";
+    for (let k = 0; k < 9; k++) { g.strokeStyle = `rgba(${130 + rI()*40|0},${125 + rI()*40|0},${120 + rI()*40|0},${.18 + rI()*.25})`; g.lineWidth = .6 + rI()*2.2; g.beginPath(); let x = rI()*w, y = 0; g.moveTo(x, y); while (y < h) { x += (rI() - .5)*30; y += 8 + rI()*20; g.lineTo(x, y); } g.stroke(); } });
+  T.leather = tex(128, 128, (g, w, h) => { g.fillStyle = "#b0b0b0"; g.fillRect(0, 0, w, h); for (let k = 0; k < 1800; k++) { g.fillStyle = rI() < .5 ? "rgba(0,0,0,.08)" : "rgba(255,255,255,.07)"; g.beginPath(); g.arc(rI()*w, rI()*h, .6 + rI()*1.4, 0, 7); g.fill(); } });
   /* ---------- palette ---------- */
   const WAL = "#5c3a22", WALD = "#3e2614", BRASS = "#b8963e", STEEL = "#1d1f22", LAM = "#a9acae", PLAS = "#c9c2b2", BLK = "#141518", FAB = "#2b2d33", CHROME = "#c9ced5";
-  const W = { tex: T.wood, shine: .45 }, Wd = { tex: T.wood, shine: .35 }, MET = { shine: .85 }, PL = { shine: .25 };
+  const W = { tex: T.wood, shine: .45 }, Wd = { tex: T.wood, shine: .35 }, MET = { tex: T.brushed, shine: .85 }, PL = { tex: T.plastic, shine: .25 };
   /* ================= PREFABS (pivot at floor centre, front = +z, user side = -z) ================= */
   const OFF = {};
   // OFF-08 desk telephone 0.22 x 0.11 x 0.20
@@ -1560,7 +1566,7 @@ const INTERIOR = (function () {
     p.cy("#8d877a", .012, .012, .01, .05, .1, .21, PL, [Math.PI/2, 0, 0]); p.box("#33ff33", .008, .008, .004, -.05, .1, .213, { unlit: true }); for (let k = 0; k < 8; k++) p.box("#6f6a60", .14, .006, .004, 0, .05 + k*.012, -.212, PL); };
   OFF.keyboard = (p) => { p.rb(PLAS, .45, .025, .16, 0, .016, 0, PL, .006, [.06, 0, 0]); p.fl("#ffffff", .42, .13, 0, .03, 0, { tex: T.keys, shine: .2 }, [.06, 0, 0]); p.rb(PLAS, .06, .02, .1, .3, .012, 0, PL, .01); };
   // OFF-02 workstation 1.40 x 0.74 x 0.70 : laminate top, two steel T-legs, modesty panel, keyboard tray
-  OFF.workstation = (p, s = 0) => { p.rb(LAM, 1.4, .035, .7, 0, .7225, 0, { shine: .3 }, .012);
+  OFF.workstation = (p, s = 0) => { p.rb("#ffffff", 1.4, .035, .7, 0, .7225, 0, { tex: T.laminate, shine: .3 }, .012);
     for (const x of [-.62, .62]) { p.box(STEEL, .06, .68, .06, x, .35, 0, MET); p.box(STEEL, .06, .03, .62, x, .015, 0, MET); p.box(STEEL, .05, .03, .6, x, .69, 0, MET); for (const z of [-.3, .3]) p.cy("#333333", .02, .02, .01, x, 0, z, PL); }
     p.box(STEEL, 1.18, .35, .02, 0, .52, .32, MET); p.box(STEEL, 1.2, .03, .04, 0, .67, .3, MET);
     p.box("#3a3d42", .6, .02, .3, 0, .62, -.22, PL); p.box(STEEL, .02, .04, .3, -.3, .64, -.22, MET); p.box(STEEL, .02, .04, .3, .3, .64, -.22, MET);
@@ -1570,8 +1576,8 @@ const INTERIOR = (function () {
   // OFF-10 rolling office chair
   OFF.chair = (p, c = FAB) => { for (let k = 0; k < 5; k++) { const a = k/5*6.283, q = p.sub(0, 0, 0, a); q.box(BLK, .04, .035, .3, 0, .07, .15, PL, [-.08, 0, 0]); q.el(BLK, .025, .025, .025, 0, .028, .29, PL); q.cy("#222222", .006, .006, .05, -.02, .028, .29, PL, [0, 0, Math.PI/2]); }
     p.cy(BLK, .045, .045, .05, 0, .07, 0, PL); p.cy(CHROME, .022, .022, .3, 0, .1, 0, MET); p.box(BLK, .26, .03, .26, 0, .41, 0, PL);
-    p.rb(c, .5, .08, .48, 0, .46, 0, { tex: T.fabric, shine: .1 }, .03); p.box(BLK, .06, .3, .03, 0, .62, -.25, PL, [-.1, 0, 0]);
-    p.rb(c, .46, .5, .07, 0, .85, -.28, { tex: T.fabric, shine: .1 }, .03, [-.12, 0, 0]);
+    p.rb(c, .5, .08, .48, 0, .46, 0, { tex: T.leather, shine: .25 }, .03); p.box(BLK, .06, .3, .03, 0, .62, -.25, PL, [-.1, 0, 0]);
+    p.rb(c, .46, .5, .07, 0, .85, -.28, { tex: T.leather, shine: .25 }, .03, [-.12, 0, 0]);
     for (const x of [-.27, .27]) { p.box(BLK, .03, .2, .03, x, .52, .02, PL); p.rb(BLK, .06, .03, .24, x, .63, .02, PL, .012); } };
   // OFF-09 visitor chair: tapered legs, cushion, curved back panel, frame
   OFF.visitor = (p, col = "#6e5a48") => { for (const [x, z] of [[-.24, .22], [.24, .22], [-.24, -.22], [.24, -.22]]) p.cy(WALD, .02, .014, .42, x, 0, z, W);
@@ -1631,77 +1637,231 @@ const INTERIOR = (function () {
   // TV-05 video wall 4.80 x 2.70 x 0.22 (3 x 2 framed tiles)
   TV.wall = (p) => { for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) { const x = -1.6 + c*1.6, y = .7 + r*.9; p.box("#0e0f11", 1.58, .88, .1, x, y, 0, PL); p.pl("#ffffff", 1.53, .83, x, y, .051, { tex: T.scr[(r*3 + c) % 4], unlit: true }); }
     for (const x of [-1.6, 1.6]) p.box("#2a2a2a", .1, 1.8, .1, x, 1.15, -.1, MET); };
-  /* ================= ARCHITECTURE (local coords; door/window openings are real gaps) ================= */
-  const SOLID = [], WALLS = [], H = 3.4, root = P(fr(IO[0], 0, IO[2]));
-  const solW = (x0, z0, x1, z1) => { sol(x0, z0, x1, z1); WALLS.push(SOLID[SOLID.length - 1]); };
-  const sol = (x0, z0, x1, z1) => SOLID.push([IO[0] + Math.min(x0, x1), IO[2] + Math.min(z0, z1), IO[0] + Math.max(x0, x1), IO[2] + Math.max(z0, z1)]);
-  // wall along x (z fixed) or along z (x fixed); ops = [[centre, width, height, kind]]
-  function wall(ax, a0, a1, c, th, ops = [], skin = [T.wall, T.wall]) { ops = ops.slice().sort((a, b) => a[0] - b[0]); let s = a0; const segs = [];
-    for (const [oc, ow] of ops) { segs.push([s, oc - ow/2]); s = oc + ow/2; } segs.push([s, a1]);
-    const B = (u0, u1, y0, y1) => { const L = u1 - u0, m = (u0 + u1)/2; if (L < .01) return; if (ax === "x") root.box("#ffffff", L, y1 - y0, th, m, (y0 + y1)/2, c, { tex: skin[0], shine: .05 }); else root.box("#ffffff", th, y1 - y0, L, c, (y0 + y1)/2, m, { tex: skin[0], shine: .05 }); };
-    for (const [u0, u1] of segs) { B(u0, u1, 0, H); if (ax === "x") solW(u0, c - th/2, u1, c + th/2); else solW(c - th/2, u0, c + th/2, u1);
-      for (const sd of [-1, 1]) { const L = u1 - u0, m = (u0 + u1)/2; if (L < .05) continue; if (ax === "x") root.box("#3b3530", L, .12, .025, m, .06, c + sd*(th/2 + .0125), PL); else root.box("#3b3530", .025, .12, L, c + sd*(th/2 + .0125), .06, m, PL); } }
-    for (const [oc, ow, oh, kind] of ops) { B(oc - ow/2, oc + ow/2, oh, H);
-      // casing (architrave) around each opening, both faces
-      for (const sd of [-1, 1]) { const o = sd*(th/2 + .01); const cas = (w, h, d, x, y, z) => ax === "x" ? root.box("#e9e5dc", w, h, d, x, y, z, { shine: .3 }) : root.box("#e9e5dc", d, h, w, z, y, x, { shine: .3 });
-        cas(.08, oh, .02, oc - ow/2 - .04, oh/2, c + o); cas(.08, oh, .02, oc + ow/2 + .04, oh/2, c + o); cas(ow + .16, .08, .02, oc, oh + .04, c + o); }
-      if (kind === "door") { // 1.0 x 2.2 leaf on 3 hinges, swung open 100 degrees
-        const hx = oc - ow/2 + .02, leaf = ax === "x" ? root.sub(hx, 0, c, -1.75) : root.sub(c, 0, hx, Math.PI/2 - 1.75);
-        leaf.box("#8a6a4a", ow - .04, 2.18, .045, (ow - .04)/2, 1.09, 0, { tex: T.wood, shine: .3 }); for (const y of [.25, 1.1, 1.95]) leaf.box(CHROME, .02, .1, .05, .005, y, 0, MET);
-        for (const sd of [-1, 1]) { leaf.cy(CHROME, .025, .025, .03, ow - .14, 1.0, sd*.03, MET, [sd*Math.PI/2, 0, 0]); leaf.box(CHROME, .1, .018, .018, ow - .19, 1.0, sd*.05, MET); } }
-      if (kind === "glass") { // glazed double door: frames + glass, both leaves open
-        for (const sd of [-1, 1]) { const hx = oc + sd*(ow/2 - .02), leaf = ax === "x" ? root.sub(hx, 0, c, sd < 0 ? -1.6 : 1.6 + Math.PI) : root.sub(c, 0, hx, Math.PI/2 + (sd < 0 ? -1.6 : 1.6 + Math.PI));
-          const lw = ow/2 - .04; leaf.box("#2b2d30", lw, .08, .05, lw/2, .04, 0, MET); leaf.box("#2b2d30", lw, .08, .05, lw/2, 2.16, 0, MET); leaf.box("#2b2d30", .06, 2.2, .05, .03, 1.1, 0, MET); leaf.box("#2b2d30", .06, 2.2, .05, lw - .03, 1.1, 0, MET);
-          leaf.box("#5f7f8f", lw - .1, 2.04, .012, lw/2, 1.1, 0, { shine: 1 }); leaf.box(CHROME, .03, .7, .03, lw - .12, 1.1, .05, MET); } }
-      if (kind === "window") { const y0 = .9; if (ax === "x") { root.box("#ffffff", ow, y0, th, oc, y0/2, c, { tex: skin[0], shine: .05 }); root.box("#e9e5dc", ow + .1, .03, th + .12, oc, y0, c, { shine: .3 }); root.pl("#bbccdd", ow, oh - y0, oc, (oh + y0)/2, c, { shine: 1 }); }
-        else { root.box("#ffffff", th, y0, ow, c, y0/2, oc, { tex: skin[0], shine: .05 }); root.box("#e9e5dc", th + .12, .03, ow + .1, c, y0, oc, { shine: .3 }); root.pl("#9ab4c4", ow, oh - y0, c, (oh + y0)/2, oc, { shine: 1 }, [0, Math.PI/2, 0]); }
-        if (ax === "x") sol(oc - ow/2, c - th/2, oc + ow/2, c + th/2); else sol(c - th/2, oc - ow/2, c + th/2, oc + ow/2); } } }
-  // floors (carpet tile 0.6 m, stone in the lobby, dark studio carpet) and ceiling (0.6 m acoustic tiles with troffers)
-  const floor = (x0, z0, x1, z1, t, col = "#ffffff") => root.g(col, grid(1, 1, (a, b) => [x0 + (x1 - x0)*b, 0, z1 - (z1 - z0)*a, (x1 - x0)*b/2.4, (z1 - (z1 - z0)*a)/2.4]), 0, .001, 0, { tex: t, shine: t === T.stone ? .6 : .05 });
-  floor(5, 0, 13, 4, T.stone); floor(0, 0, 5, 4, T.carpet); floor(13, 0, 18, 4, T.carpet); floor(0, 4, 11, 12, T.carpet); floor(11, 4, 18, 12, T.carpet, "#7a6f80");
-  root.g("#ffffff", grid(1, 1, (a, b) => [18*b, 0, 12*a, 18*b/1.2, 12*a/1.2]), 0, H, 0, { tex: T.ceil, shine: 0 });
-  for (let x = 1.5; x < 18; x += 3) for (let z = 2; z < 12; z += 3) { root.box("#d8d8d2", 1.22, .1, .62, x, H - .05, z, PL); root.fl("#fffbea", 1.1, .5, x, H - .101, z, { unlit: true }, [Math.PI, 0, 0]); for (let k = 0; k < 4; k++) root.box("#c8c8c2", .02, .02, .5, x - .45 + k*.3, H - .11, z, PL); }
-  // outer shell: street wall (z=0) with glass doors + blinds windows, side and back walls
-  wall("x", 0, 18, -.1, .2, [[9, 1.8, 2.3, "glass"], [2.5, 1.6, 2.5, "window"], [15.5, 1.6, 2.5, "window"], [6.2, 1.2, 2.5, "window"], [11.8, 1.2, 2.5, "window"]]);
-  for (const x of [2.5, 15.5, 6.2, 11.8]) root.pl("#ffffff", x === 6.2 || x === 11.8 ? 1.2 : 1.6, 1.6, x, 1.7, .005, { tex: T.blinds, shine: .1 });
-  wall("x", -.2, 18.2, 12.1, .2); wall("z", -.2, 12.2, -.1, .2); wall("z", -.2, 12.2, 18.1, .2);
-  // partitions: lobby/newsroom (z=4), offices, control & radio
-  wall("x", 0, 18, 4, .15, [[2.5, 1.0, 2.2, "door"], [9, 2.4, 2.3, "glass"]]);
-  wall("z", 0, 4, 5, .15); wall("z", 0, 4, 13, .15, [[2.6, 1.0, 2.2, "door"]]);
-  wall("z", 4, 12, 11, .15, [[5.4, 1.0, 2.2, "door"], [10.6, 1.0, 2.2, "door"]]);
-  wall("x", 11, 18, 7.6, .15, [[15, 2.6, 2.2, "window"]]);
-  /* ================= ROOMS: placement inventory per the atlas ================= */
-  const place = (fn, x, z, ry = 0, fp = null, ...args) => { fn(root.sub(x, 0, z, ry), ...args); if (fp) { const c = Math.abs(Math.cos(ry)), s = Math.abs(Math.sin(ry)), hw = (fp[0]*c + fp[1]*s)/2, hd = (fp[0]*s + fp[1]*c)/2; sol(x - hw, z - hd, x + hw, z + hd); } };
-  // Lobby (5..13 x 0..4): reception counter facing the street door, 3 visitor chairs, GNS logo wall, plants
-  place(OFF.reception, 9, 2.7, Math.PI, [2.9, 1.0]); root.box("#0f2d55", 5.5, 2.4, .04, 9, 1.75, 3.9, PL); root.pl("#ffffff", 3.6, 1.8, 9, 1.9, 3.87, { tex: T.gnsWall, unlit: true }, [0, Math.PI, 0]);
-  for (let k = 0; k < 3; k++) place(OFF.visitor, 5.55, 1.0 + k*.8, Math.PI/2, [.6, .6]);
-  for (const x of [5.5, 12.5]) { root.cy("#3a3a3a", .22, .18, .45, x, 0, 3.55, PL); root.el("#2f5a2f", .35, .55, .35, x, .95, 3.55, { shine: .1 }); }
-  root.pl("#ffffff", .6, .22, 9, 2.45, .12, { tex: T.exit, unlit: true });
-  // Ben Turner's office (0..5 x 0..4) and Richie's office (13..18 x 0..4): OFF-01, OFF-09 x2 each, file cabinet, rug, framed photo
-  for (const [cx, sign] of [[2.5, T.signBen], [15.5, T.signRich]]) { place(OFF.exec, cx, 2.6, Math.PI, [2.05, .95]); place(OFF.chair, cx, 3.3, Math.PI, null, "#3b2a22");
-    place(OFF.visitor, cx - .5, 1.4, 0, [.6, .6], "#4a5a6e"); place(OFF.visitor, cx + .5, 1.4, 0, [.6, .6], "#4a5a6e"); place(OFF.file, cx + (cx < 9 ? -2.1 : 2.1), 3.5, Math.PI, [.5, .65]);
-    root.fl("#6a2a2a", 3, 2, cx, .006, 1.9, { tex: T.fabric, shine: 0 }); root.box("#3a2a1a", .9, .6, .03, cx, 1.9, 3.91, W); root.pl("#ffffff", .8, .5, cx, 1.9, 3.89, { tex: T.scr[1] }, [0, Math.PI, 0]); }
-  root.pl("#ffffff", .9, .22, 2.5, 2.45, 4.09, { tex: T.signBen }); root.pl("#ffffff", .9, .22, 13.09, 2.45, 2.6, { tex: T.signRich }, [0, -Math.PI/2, 0]);
-  // Newsroom (0..11 x 4..12): 10 workstations + 10 chairs + 10 CRTs, 4 file cabinets, video wall
-  let s = 0; for (const z of [6.9, 9.9]) for (let k = 0; k < 5; k++) { const x = 1.0 + k*1.5; place(OFF.workstation, x, z, Math.PI, [1.42, .72], s); place(OFF.chair, x, z + .75, Math.PI + (s % 3 - 1)*.25); s++; }
-  for (let k = 0; k < 4; k++) place(OFF.file, .45, 4.6 + k*.5 + (k > 1 ? 4 : 0) - (k > 1 ? 1 : 0), Math.PI/2, [.65, .5]);
-  TV.wall(root.sub(5.5, .2, 11.85, Math.PI)); sol(3, 11.7, 8, 12);
-  root.pl("#ffffff", .7, .26, 10.6, 2.55, 7.6 + 3.0, { tex: T.onair, unlit: true }, [0, -Math.PI/2, 0]);
-  // Control room (11..18 x 4..7.6): TV-04 console facing the radio-booth window
-  place(TV.console, 15, 6.5, Math.PI, [2.25, .95]); place(OFF.chair, 14.3, 5.6, Math.PI); place(OFF.chair, 15.7, 5.6, Math.PI);
-  for (let k = 0; k < 3; k++) RAD.panel(root.sub(18 - .02, 1.6 + (k % 2)*.7, 4.8 + k*.95, -Math.PI/2), "#2a2c30");
-  // Radio booth (11..18 x 7.6..12): RAD-01 desk, 3 booms + headphones on the desk, 12 acoustic panels (staggered), ON AIR light
-  place(RAD.desk, 14.6, 10.2, Math.PI, [2.6, 1.2]); for (const [x, z, ry] of [[13.6, 11.2, Math.PI], [15.6, 11.2, Math.PI], [14.6, 9.0, 0]]) place(OFF.chair, x, z, ry);
-  for (let k = 0; k < 12; k++) { const onBack = k < 6, x = onBack ? 11.9 + (k % 3)*1.35 + (k > 2 ? .6 : 0) : 17.98, z = onBack ? 11.98 : 8.3 + ((k - 6) % 3)*1.2, y = 1.3 + (onBack ? (k > 2 ? .75 : 0) : (k > 8 ? .75 : 0));
-    RAD.panel(root.sub(x, y, z, onBack ? Math.PI : -Math.PI/2), k % 2 ? "#5a1e26" : "#2a2c30"); }
-  root.pl("#ffffff", .5, .18, 11.08, 2.5, 10.6, { tex: T.onair, unlit: true }, [0, Math.PI/2, 0]);
-  /* ---------- upload batches as engine meshes ---------- */
-  const node0 = node([0, 0, 0]); for (const k in BATCH) { const B = BATCH[k]; for (const part of B.parts) { const m = mesh(part, B.col, { tex: B.o.tex, shine: B.o.shine != null ? B.o.shine : .05, unlit: B.o.unlit, cut: B.o.cut }); m.flat = 0; node0.meshes.push(m); } }
-  computeWorld(node0, ident());
-  for (const k in BATCH) delete BATCH[k];
+  /* ================= GNS STUDIOS v2 — modelled on a modern cable-news headquarters (open working newsroom behind the anchor desk,
+     seamless LED walls, lit reveal lines on off-white walls, a working staircase up to a balcony of workstations, black open ceiling
+     with a lighting grid, glass-fronted offices and booths). Local footprint 24 x 18 m, street door at z = 0. ================= */
+  T.led = tex(1024, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, "#06204a"); gr.addColorStop(.5, "#0d3f86"); gr.addColorStop(1, "#071a3a"); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 1600; i++) { const x = rI()*w, y = 20 + rI()*(h - 90); if (Math.sin(x*.012)*Math.cos(y*.03) + Math.sin(x*.031 + 1) > .4) { g.fillStyle = `rgba(120,190,255,${.25 + rI()*.4})`; g.fillRect(x, y, 2, 2); } }
+    for (let k = 0; k < 6; k++) { g.strokeStyle = "rgba(140,200,255,.12)"; g.lineWidth = 1; g.beginPath(); g.ellipse(w*.62, h*.42, 90 + k*55, 40 + k*22, 0, 0, 7); g.stroke(); }
+    g.fillStyle = "#c8102e"; g.fillRect(0, h - 64, w, 46); g.fillStyle = "#fff"; g.font = "bold 34px Arial"; g.textAlign = "left"; g.fillText("GNS NEWSROOM", 150, h - 29); gnsBug(g, 30, h - 60, 1.7);
+    g.fillStyle = "rgba(255,255,255,.85)"; g.font = "bold 20px Arial"; g.fillText("LIVE  ·  PORT CALLOWAY", 470, h - 33); g.fillStyle = "#0a0f1a"; g.fillRect(0, h - 18, w, 18); g.fillStyle = "#e9eef5"; g.font = "13px Arial";
+    g.fillText("REYES LEADS NEW POLL · AP FACT-CHECK UNDER FIRE · CITY COUNCIL VOTES TONIGHT · GNS+ STREAMING LIVE", 10, h - 4); });
+  T.ledV = tex(256, 512, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, "#0b2f6a"); gr.addColorStop(1, "#04122a"); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 9; k++) { g.fillStyle = `rgba(200,16,46,${.25 + (k % 3)*.15})`; g.beginPath(); g.moveTo(0, 60 + k*55); g.lineTo(w, 20 + k*55); g.lineTo(w, 30 + k*55); g.lineTo(0, 70 + k*55); g.fill(); }
+    g.fillStyle = "#fff"; g.font = "bold 46px Arial"; g.textAlign = "center"; g.fillText("GNS", w/2, h - 60); g.font = "bold 16px Arial"; g.fillText("BREAKING NEWS", w/2, h - 32); });
+  T.anchor = screen((g, w, h) => { g.fillStyle = "#0d3f86"; g.fillRect(0, 0, w, h); g.fillStyle = "#c8102e"; g.fillRect(0, 70, w, 52); g.fillStyle = "#fff"; g.font = "bold 40px Arial"; g.textAlign = "center"; g.fillText("GNS", w/2, 110); });
+  T.dark = tex(256, 256, (g, w, h) => { g.fillStyle = "#2a2c30"; g.fillRect(0, 0, w, h); for (let k = 0; k < 4000; k++) { g.fillStyle = rI() < .5 ? "rgba(0,0,0,.1)" : "rgba(255,255,255,.04)"; g.fillRect(rI()*w, rI()*h, 2, 2); }
+    for (let k = 0; k < 6; k++) { g.fillStyle = "rgba(255,255,255,.03)"; g.beginPath(); g.ellipse(rI()*w, rI()*h, 30 + rI()*50, 10 + rI()*20, rI()*3, 0, 7); g.fill(); } g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(0, 0, w, 2); g.fillRect(0, 0, 2, h); });
+  T.offwhite = tex(256, 256, (g, w, h) => { g.fillStyle = "#e4e1da"; g.fillRect(0, 0, w, h); for (let k = 0; k < 2500; k++) { g.fillStyle = rI() < .5 ? "rgba(0,0,0,.03)" : "rgba(255,255,255,.06)"; g.fillRect(rI()*w, rI()*h, 2, 2); }
+    g.fillStyle = "rgba(0,0,0,.14)"; g.fillRect(0, 0, 2, h); g.fillStyle = "rgba(0,0,0,.05)"; g.fillRect(0, h - 40, w, 40); });
+  T.charcoal = tex(128, 128, (g, w, h) => { g.fillStyle = "#24262a"; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 8) { g.fillStyle = "rgba(255,255,255,.05)"; g.fillRect(x, 0, 1, h); } for (let k = 0; k < 600; k++) { g.fillStyle = "rgba(0,0,0,.2)"; g.fillRect(rI()*w, rI()*h, 1, 2); } });
+  T.woodWall = tex(256, 256, (g, w, h) => { for (let x = 0; x < w; x += 16) { const v = rI()*18 | 0; g.fillStyle = `rgb(${120 + v},${82 + v},${52 + v})`; g.fillRect(x, 0, 14, h); g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(x + 14, 0, 2, h);
+      for (let y = 0; y < h; y += 3) { g.fillStyle = `rgba(60,35,15,${rI()*.15})`; g.fillRect(x, y, 14, 1); } } });
+  T.clock = tex(512, 128, (g, w, h) => { const C = [["PORT CALLOWAY", 2], ["WASHINGTON", 2], ["LONDON", 7], ["MOSCOW", 10], ["TOKYO", 16]];
+    C.forEach(([n, hr], k) => { const cx = 51 + k*102, cy = 52; g.fillStyle = "#f4f2ec"; g.beginPath(); g.arc(cx, cy, 38, 0, 7); g.fill(); g.strokeStyle = "#222"; g.lineWidth = 4; g.stroke();
+      for (let m = 0; m < 12; m++) { const a = m/12*6.283; g.fillStyle = "#222"; g.fillRect(cx + Math.sin(a)*30 - 1.5, cy - Math.cos(a)*30 - 1.5, 3, 3); }
+      const ha = (hr % 12)/12*6.283 + .3, ma = .3*6.283; g.strokeStyle = "#111"; g.lineWidth = 4; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(ha)*18, cy - Math.cos(ha)*18); g.stroke();
+      g.lineWidth = 2.5; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.sin(ma)*28, cy - Math.cos(ma)*28); g.stroke(); g.fillStyle = "#e9eef5"; g.font = "bold 12px Arial"; g.textAlign = "center"; g.fillText(n, cx, 116); }); });
+  T.binder = tex(64, 64, (g, w, h) => { const C = ["#2b4c7e", "#7e2b2b", "#2b6e4c", "#d9c25a", "#444"]; for (let k = 0; k < 8; k++) { g.fillStyle = C[k % 5]; g.fillRect(k*8, 0, 7, h); g.fillStyle = "#f2f2f2"; g.fillRect(k*8 + 1, 10, 5, 8); } });
+  T.flat = [T.scr[0], T.scr[1], T.scr[3], T.anchor];
+  [T.dark, T.offwhite, T.charcoal, T.woodWall].forEach(rep);
+  const GLASS = { glass: true, shine: 1 }, LIT = c => ({ unlit: true }), FROST = { glass: true, shine: .6 };
+  // ---------- new prefabs ----------
+  // flat 24" monitor on a stand
+  OFF.flat = (p, s = 0) => { p.rb("#141518", .56, .34, .03, 0, .42, 0, PL, .008); p.pl("#ffffff", .53, .31, 0, .42, .0165, { tex: T.flat[s % T.flat.length], unlit: true }); p.box("#2a2b2e", .05, .2, .03, 0, .19, -.03, MET); p.rb("#2a2b2e", .22, .015, .17, 0, .008, -.03, MET, .006); };
+  OFF.mouse = (p) => { p.el("#1a1a1a", .03, .015, .05, 0, .012, 0, PL); p.box("#2a2a2c", .22, .003, .18, 0, .001, 0, PL); };
+  OFF.cup = (p, c = "#f4f1ea") => { p.cy(c, .04, .045, .1, 0, 0, 0, { shine: .4 }); p.cy("#3a2010", .036, .036, .002, 0, .09, 0, PL); p.box(c, .012, .05, .03, .05, .05, 0, PL); };
+  OFF.binders = (p) => { for (let k = 0; k < 4; k++) p.box(["#2b4c7e", "#7e2b2b", "#2b6e4c", "#d9c25a"][k], .05, .29, .24, k*.055, .145, 0, { shine: .2 }); };
+  // pod of four modern workstations (two facing pairs) with a frosted centre screen; chairs pulled out clear of the desks
+  OFF.pod = (p, s = 0) => { for (const [x, side] of [[-.76, 1], [.76, 1], [-.76, -1], [.76, -1]]) { const d = p.sub(x, 0, side*.4, side > 0 ? 0 : Math.PI); const k = s++;
+      d.rb("#ffffff", 1.5, .035, .78, 0, .7425, 0, { tex: T.laminate, shine: .45 }, .012); d.box("#1b1c1f", .04, .72, .7, -.72, .36, 0, MET); d.box("#1b1c1f", .04, .72, .7, .72, .36, 0, MET); d.box("#1b1c1f", 1.4, .05, .04, 0, .7, -.33, MET);
+      const top = d.sub(0, .76, 0); OFF.flat(top.sub(-.27, 0, -.2, .18), k); OFF.flat(top.sub(.29, 0, -.2, -.18), k + 1); OFF.keyboard(top.sub(0, 0, .12)); OFF.mouse(top.sub(.33, 0, .14));
+      if (k % 2) OFF.cup(top.sub(-.6, 0, .1), k % 4 === 1 ? "#c8102e" : "#f4f1ea"); else OFF.binders(top.sub(-.68, 0, -.25));
+      if (k % 3 === 0) OFF.phone(top.sub(.55, 0, -.1, -.3)); for (let n = 0; n < 1 + k % 3; n++) top.fl("#ffffff", .21, .297, .5 - n*.03, .002 + n*.002, .15, { tex: T.paper }, [0, .3*n - .2, 0]);
+      OFF.chair(d.sub(.05 - (k % 3)*.08, 0, .9 + (k % 2)*.12, Math.PI + (k % 3 - 1)*.3), ["#1d1f24", "#2a2d35", "#1d1f24"][k % 3]); }
+    p.box("#c9d6dc", 3.0, .42, .03, 0, .97, 0, FROST); p.box("#9aa4ab", 3.02, .025, .05, 0, 1.19, 0, MET); };
+  // TV-01 anchor desk (3.40 x 1.05 x 1.10): crescent top, faceted fascia, lit centre emblem, toe plinth; sits on a round LED-edged riser
+  TV.anchor = (p) => { const R0 = 1.1, R1 = 2.2, a0 = -.82, a1 = .82, seg = 20, slab = (y0, y1, col, o, r0, r1) => { const G = grid(1, seg, (a, b, r) => { const ang = a0 + (a1 - a0)*b, rr = r ? r1 : r0; return [Math.sin(ang)*rr, 0, -Math.cos(ang)*rr + R1 - .55, b, r]; });
+      p.g(col, G, 0, y1, 0, o); p.g(col, G, 0, y0, 0, o, [Math.PI, 0, 0]); for (const rr of [r0, r1]) p.g(col, grid(1, seg, (a, b, r) => { const ang = a0 + (a1 - a0)*b; return [Math.sin(ang)*rr, r ? y1 : y0, -Math.cos(ang)*rr + R1 - .55, b, r]; }), 0, 0, 0, o); };
+    slab(.98, 1.05, "#ffffff", { tex: T.marble, shine: .8 }, R0, R1); slab(.14, .98, "#0f2d55", { shine: .7 }, R0 + .25, R1 - .05); slab(0, .14, "#1a1a1c", PL, R0 + .3, R1 - .1);
+    for (let k = 0; k < 3; k++) { const ang = a0 + (a1 - a0)*(k + .5)/3, rr = R1 - .04, x = Math.sin(ang)*rr, z = -Math.cos(ang)*rr + R1 - .55; p.box("#c9ced5", .02, .84, .02, Math.sin(ang - .27)*rr, .56, -Math.cos(ang - .27)*rr + R1 - .55, MET);
+      if (k === 1) p.pl("#ffffff", .9, .5, x, .6, z - .02, { tex: T.anchor, unlit: true }, [0, Math.PI + ang, 0]); }
+    for (let k = 0; k < 2; k++) { const top = p.sub(-.45 + k*.9, 1.05, -.2); top.box("#16181b", .3, .006, .22, 0, .003, 0, PL); top.fl("#ffffff", .21, .297, .2, .004, .02, { tex: T.paper }); OFF.cup(top.sub(-.3, 0, .05), "#0f2d55"); }
+    OFF.flat(p.sub(.9, 1.05, -.05, -.5), 1); };
+  TV.riser = (p) => { p.cy("#141519", 2.6, 2.6, .2, 0, 0, 0, { shine: .6 }, [0, 0, 0], 48); p.cy("#4a8cff", 2.62, 2.62, .03, 0, .085, 0, { unlit: true }, [0, 0, 0], 48); p.cy("#1c1e22", 2.5, 2.5, .005, 0, .2, 0, { shine: .7 }, [0, 0, 0], 48); };
+  // TV-02 studio camera on a pedestal + TV-03 teleprompter hood
+  TV.camera = (p) => { for (let k = 0; k < 3; k++) { const a = k/3*6.283, q = p.sub(0, 0, 0, a); q.box("#2a2b2e", .08, .06, .5, 0, .14, .25, MET); q.cy("#111", .05, .05, .04, -.02, .05, .48, PL, [0, 0, Math.PI/2]); q.box("#2a2b2e", .02, .08, .05, 0, .09, .48, MET); }
+    p.cy("#3a3c40", .16, .14, .35, 0, .12, 0, MET); p.cy("#55585e", .08, .08, .7, 0, .45, 0, MET); p.cy("#8a8f96", .06, .06, .3, 0, 1.12, 0, MET); p.cy("#2a2b2e", .2, .2, .03, 0, .82, 0, MET, [0, 0, 0], 16);
+    for (let k = 0; k < 4; k++) { const a = k/4*6.283; p.cy("#c9ced5", .012, .012, .18, Math.sin(a)*.2, .83, Math.cos(a)*.2, MET, [-1.2*Math.cos(a), 0, 1.2*Math.sin(a)]); }
+    const h = p.sub(0, 1.42, 0); h.box("#1a1b1e", .18, .1, .3, 0, 0, 0, MET); const b = h.sub(0, .16, 0); b.rb("#1b1c1f", .3, .3, .62, 0, .06, -.05, PL, .02); b.cy("#0e0f11", .1, .12, .34, 0, .05, .26, PL, [Math.PI/2, 0, 0]);
+    b.cy("#000000", .085, .085, .004, 0, .05, .6, { shine: 1 }, [Math.PI/2, 0, 0]); b.box("#26282b", .2, .15, .1, .22, .12, -.2, PL); b.box("#1d1e21", .03, .03, .4, -.18, .2, -.2, MET);
+    for (const sd of [-1, 1]) { b.cy("#1d1e21", .015, .015, .4, sd*.25, -.05, -.45, MET, [Math.PI/2.4, 0, 0]); b.cy("#2a2b2e", .022, .022, .1, sd*.33, -.05, -.62, PL, [0, 0, Math.PI/2]); }
+    const t = b.sub(0, .05, .55); t.box("#1a1b1e", .5, .44, .02, 0, .02, .17, PL); t.box("#1a1b1e", .02, .44, .36, -.25, .02, 0, PL); t.box("#1a1b1e", .02, .44, .36, .25, .02, 0, PL); t.box("#1a1b1e", .5, .02, .36, 0, .24, 0, PL);
+    t.box("#2a3b48", .46, .42, .006, 0, .02, -.02, { shine: 1 }, [.78, 0, 0]); t.pl("#ffffff", .44, .2, 0, -.18, -.04, { tex: T.scr[3], unlit: true }, [-Math.PI/2, 0, 0]);
+    p.cy("#111111", .012, .012, 1.4, -.1, .02, -.2, PL, [Math.PI/2, 0, 0]); };
+  // TV-05 seamless LED wall with a black mullion frame and a backlit header
+  TV.led = (p, w, h, t, hdr = "#4a8cff") => { p.box("#0b0c0e", w + .14, h + .14, .12, 0, h/2, -.06, PL); p.pl("#ffffff", w, h, 0, h/2, .002, { tex: t, unlit: true }); for (let k = 1; k < 6; k++) p.box("#000000", .006, h, .004, -w/2 + k*w/6, h/2, .004, PL);
+    p.box(hdr, w + .14, .05, .03, 0, h + .12, .0, { unlit: true }); };
+  // ellipsoidal/fresnel studio light hung from the grid
+  const fresnel = (p, ry, tilt) => { p.cy("#1c1d20", .03, .03, .25, 0, -.25, 0, MET); const y = p.sub(0, -.28, 0, ry); y.box("#1c1d20", .36, .03, .04, 0, 0, 0, MET); for (const sd of [-1, 1]) y.box("#1c1d20", .03, .22, .04, sd*.17, -.11, 0, MET);
+    const b = y.sub(0, -.18, 0, 0, tilt); b.cy("#1f2023", .12, .12, .32, 0, -.16, 0, PL, [Math.PI/2, 0, 0]); b.cy("#fff6dd", .1, .1, .006, 0, -.16, .33, { unlit: true }, [Math.PI/2, 0, 0]);
+    for (let k = 0; k < 4; k++) { const a = k/4*6.283; b.box("#1f2023", .2, .006, .12, Math.sin(a)*.13, -.16 + Math.cos(a)*.13, .38, PL, [Math.cos(a)*.6, 0, a]); } };
+  const plant = (p, s = 1) => { p.cy("#e8e4dc", .22*s, .17*s, .5*s, 0, 0, 0, { shine: .4 }); p.cy("#3a2a1a", .2*s, .2*s, .004, 0, .48*s, 0, PL);
+    for (let k = 0; k < 9; k++) { const a = k*2.4; p.el(k % 2 ? "#2f6a35" : "#3f7a3f", .09*s, .28*s, .04*s, Math.sin(a)*.1*s, (.75 + (k % 3)*.12)*s, Math.cos(a)*.1*s, { shine: .2 }, [Math.cos(a)*.5, a, Math.sin(a)*.5]); } };
+  const cooler = (p) => { p.rb("#e8e6e0", .32, 1.0, .32, 0, .5, 0, { shine: .4 }, .02); p.el("#7fb6e0", .16, .22, .16, 0, 1.2, 0, { shine: 1 }); p.box("#3a6ea8", .04, .03, .03, -.06, .8, .17, PL); p.box("#a83a3a", .04, .03, .03, .06, .8, .17, PL); };
+  const bin = (p) => { p.cy("#3a3d42", .16, .18, .42, 0, 0, 0, { shine: .3 }); p.cy("#2a2c30", .17, .17, .02, 0, .42, 0, PL); };
+  // reception desk: smooth curved front of backlit GNS glass on a walnut band, marble top with a raised transaction ledge, staff worktop behind, LED toe-kick
+  T.recFront = tex(1024, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, "#0b2a5c"); gr.addColorStop(.5, "#14489a"); gr.addColorStop(1, "#0a2350"); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    const rg = g.createRadialGradient(w/2, h/2, 10, w/2, h/2, w*.45); rg.addColorStop(0, "rgba(120,180,255,.45)"); rg.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = rg; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 6) { g.fillStyle = "rgba(255,255,255,.035)"; g.fillRect(x, 0, 2, h); } g.fillStyle = "#c8102e"; g.fillRect(w/2 - 120, 70, 240, 100); g.fillStyle = "#fff"; g.font = "bold 84px Arial"; g.textAlign = "center"; g.fillText("GNS", w/2, 150);
+    g.font = "bold 22px Arial"; g.fillStyle = "rgba(255,255,255,.85)"; g.fillText("WELCOME TO GNS STUDIOS", w/2, 215); });
+  function arcPart(p, r0, r1, a0, a1, y0, y1, col, o, cz, seg = 28) { // annular sector solid: top, bottom, inner, outer, two end caps
+    const A = (b) => a0 + (a1 - a0)*b, P2 = (ang, r) => [Math.sin(ang)*r, Math.cos(ang)*r + cz];
+    const top = grid(1, seg, (a, b, rr) => { const [x, z] = P2(A(b), rr ? r1 : r0); return [x, 0, z, b*(a1 - a0)*r1/2, rr]; }); p.g(col, top, 0, y1, 0, o); p.g(col, top, 0, y0, 0, o);
+    for (const r of [r0, r1]) p.g(col, grid(1, seg, (a, b, rr) => { const [x, z] = P2(A(b), r); return [x, rr ? y1 : y0, z, b*(a1 - a0)*r/2, rr]; }), 0, 0, 0, o);
+    for (const ang of [a0, a1]) p.g(col, grid(1, 1, (a, b) => { const [x, z] = P2(ang, b ? r1 : r0); return [x, a ? y1 : y0, z, b, a]; }), 0, 0, 0, o); }
+  OFF.reception2 = (p) => { const cz = -2.6, a0 = -.62, a1 = .62;
+    arcPart(p, 2.3, 2.9, a0, a1, 0, .1, "#141518", PL, cz); arcPart(p, 2.92, 2.94, a0 + .01, a1 - .01, .02, .05, "#4a8cff", { unlit: true }, cz);
+    arcPart(p, 2.25, 2.98, a0, a1, .1, .36, "#ffffff", { tex: T.wood, shine: .55 }, cz);
+    // backlit glass front: an outer curved band drawn unlit with the GNS graphic, framed by thin brushed rails
+    p.g("#ffffff", grid(1, 32, (a, b, rr) => { const ang = a0 + .02 + (a1 - a0 - .04)*b; return [Math.sin(ang)*2.99, rr ? 1.0 : .36, Math.cos(ang)*2.99 + cz, b, 1 - rr]; }), 0, 0, 0, { tex: T.recFront, unlit: true });
+    arcPart(p, 2.25, 2.97, a0, a1, .36, 1.0, "#1b2433", PL, cz); arcPart(p, 2.97, 3.0, a0, a1, .99, 1.01, "#c9ced5", MET, cz); arcPart(p, 2.97, 3.0, a0, a1, .355, .365, "#c9ced5", MET, cz);
+    arcPart(p, 2.55, 3.1, a0 - .01, a1 + .01, 1.06, 1.12, "#ffffff", { tex: T.marble, shine: .8 }, cz); arcPart(p, 2.55, 2.6, a0, a1, 1.0, 1.06, "#d9d6cf", { tex: T.marble, shine: .6 }, cz);
+    arcPart(p, 1.75, 2.3, a0 + .03, a1 - .03, .72, .76, "#ffffff", { tex: T.wood, shine: .5 }, cz); arcPart(p, 1.75, 1.8, a0 + .03, a1 - .03, .1, .72, "#2a2d33", PL, cz);
+    for (const ang of [a0 + .03, a1 - .03]) { const x = Math.sin(ang)*2.0, z = Math.cos(ang)*2.0 + cz; p.box("#2a2d33", .05, .66, .55, x, .43, z, PL, [0, ang, 0]); }
+    const top = p.sub(0, .76, -.35); OFF.flat(top.sub(-.55, 0, -.1, Math.PI + .25), 0); OFF.flat(top.sub(.55, 0, -.1, Math.PI - .25), 3); OFF.keyboard(top.sub(-.5, 0, .18, Math.PI + .25)); OFF.phone(top.sub(.9, 0, .1, Math.PI));
+    OFF.cup(top.sub(.2, 0, .2)); p.box("#c9a24a", .5, .1, .015, 0, 1.17, .45, { tex: T.nameplate, shine: .8 }, [-.35, 0, 0]);
+    p.g("#ffffff", grid(4, 12, (a, b) => [(b - .5)*.25 + .9, 1.12 + .004, .32 + (a - .5)*.18, b, a]), 0, 0, 0, { tex: T.paper }); };
+  /* ================= ARCHITECTURE ================= */
+  const SOLID = [], WALLS = [], root = P(fr(IO[0], 0, IO[2])), WX = 24, WZ = 18, HS = 7, HL = 3.4, BAL = 3.2, BZ = 15.5;
+  const sol = (x0, z0, x1, z1, wall) => { const b = [IO[0] + Math.min(x0, x1), IO[2] + Math.min(z0, z1), IO[0] + Math.max(x0, x1), IO[2] + Math.max(z0, z1)]; SOLID.push(b); if (wall) WALLS.push(b); };
+  const solA = (x, z, w, d, ry = 0) => { const c = Math.abs(Math.cos(ry)), s2 = Math.abs(Math.sin(ry)), hw = (w*c + d*s2)/2, hd = (w*s2 + d*c)/2; sol(x - hw, z - hd, x + hw, z + hd); };
+  // a wall slab with finish on each face: [tex, colour], trimmed with baseboard + top reveal; ops are open gaps [centre, width, height]
+  function wall(ax, a0, a1, c, th, h, ops, fA, fB, y0 = 0) { ops = (ops || []).slice().sort((a, b) => a[0] - b[0]); let st = a0; const segs = []; for (const [oc, ow] of ops) { segs.push([st, oc - ow/2]); st = oc + ow/2; } segs.push([st, a1]);
+    const face = (u0, u1, ya, yb, side, f) => { const L = u1 - u0, m = (u0 + u1)/2, off = c + side*(th/2 + .002); if (L < .01 || yb - ya < .01) return;
+      if (ax === "x") root.pl(f[1] || "#ffffff", L, yb - ya, m, (ya + yb)/2, off, { tex: f[0], shine: f[2] || .1 }, [0, side > 0 ? 0 : Math.PI, 0]); else root.pl(f[1] || "#ffffff", L, yb - ya, off, (ya + yb)/2, m, { tex: f[0], shine: f[2] || .1 }, [0, side > 0 ? Math.PI/2 : -Math.PI/2, 0]); };
+    const core = (u0, u1, ya, yb) => { const L = u1 - u0, m = (u0 + u1)/2; if (L < .01) return; if (ax === "x") root.box("#3a3b3e", L, yb - ya, th, m, (ya + yb)/2, c, PL); else root.box("#3a3b3e", th, yb - ya, L, c, (ya + yb)/2, m, PL); };
+    for (const [u0, u1] of segs) { core(u0, u1, y0, y0 + h); face(u0, u1, y0, y0 + h, 1, fA); face(u0, u1, y0, y0 + h, -1, fB); if (y0 < .5) { if (ax === "x") sol(u0, c - th/2, u1, c + th/2, true); else sol(c - th/2, u0, c + th/2, u1, true); }
+      for (const side of [-1, 1]) { const L = u1 - u0, m = (u0 + u1)/2, o = c + side*(th/2 + .012); if (L < .05 || y0 > .5) continue; if (ax === "x") root.box("#1c1d20", L, .1, .024, m, .05, o, PL); else root.box("#1c1d20", .024, .1, L, o, .05, m, PL); } }
+    for (const [oc, ow, oh] of ops) { core(oc - ow/2, oc + ow/2, y0 + oh, y0 + h); face(oc - ow/2, oc + ow/2, y0 + oh, y0 + h, 1, fA); face(oc - ow/2, oc + ow/2, y0 + oh, y0 + h, -1, fB);
+      for (const side of [-1, 1]) for (const e of [oc - ow/2, oc + ow/2]) { if (ax === "x") root.box("#c9ced5", .03, oh, th + .02, e, y0 + oh/2, c, MET); else root.box("#c9ced5", th + .02, oh, .03, c, y0 + oh/2, e, MET); }
+      if (ax === "x") root.box("#c9ced5", ow, .03, th + .02, oc, y0 + oh, c, MET); else root.box("#c9ced5", th + .02, .03, ow, c, y0 + oh, oc, MET); } }
+  // glass storefront partition: floor-to-head glass, slim black mullions every 1.2 m, a sliding-door gap, frosted GNS band at eye level
+  function glassWall(ax, a0, a1, c, h, gap) { for (let u = a0; u < a1 - .01; u += 1.2) { const u1 = Math.min(a1, u + 1.2); if (gap && u1 > gap[0] - gap[1]/2 && u < gap[0] + gap[1]/2) continue; const m = (u + u1)/2, L = u1 - u;
+      if (ax === "x") { root.box("#a9c4cf", L, h - .1, .02, m, h/2, c, GLASS); root.box("#d8e2e6", L, .12, .022, m, 1.4, c, FROST); root.box("#141518", .05, h, .1, u, h/2, c, MET); sol(u, c - .06, u1, c + .06, true); }
+      else { root.box("#a9c4cf", .02, h - .1, L, c, h/2, m, GLASS); root.box("#d8e2e6", .022, .12, L, c, 1.4, m, FROST); root.box("#141518", .1, h, .05, c, h/2, u, MET); sol(c - .06, u, c + .06, u1, true); } }
+    if (ax === "x") { root.box("#141518", a1 - a0, .08, .12, (a0 + a1)/2, h, c, MET); root.box("#141518", a1 - a0, .04, .12, (a0 + a1)/2, .02, c, MET); } else { root.box("#141518", .12, .08, a1 - a0, c, h, (a0 + a1)/2, MET); root.box("#141518", .12, .04, a1 - a0, c, .02, (a0 + a1)/2, MET); }
+    if (gap) { const [gc, gw] = gap; if (ax === "x") { root.box("#a9c4cf", gw/2, h - .2, .02, gc - gw*.75, h/2, c + .08, GLASS); root.box("#141518", .04, h - .2, .05, gc - gw/2, h/2, c + .08, MET); } else { root.box("#a9c4cf", .02, h - .2, gw/2, c + .08, h/2, gc - gw*.75, GLASS); root.box("#141518", .05, h - .2, .04, c + .08, h/2, gc - gw/2, MET); } } }
+  const lit = (ax, a0, a1, c, y, side, col) => ax === "x" ? root.box(col, a1 - a0, .025, .01, (a0 + a1)/2, y, c + side*.005, { unlit: true }) : root.box(col, .01, .025, a1 - a0, c + side*.005, y, (a0 + a1)/2, { unlit: true });
+  const floorQ = (x0, z0, x1, z1, t, sc, col = "#ffffff", y = .001, sh = .1) => root.g(col, grid(1, 1, (a, b) => [x0 + (x1 - x0)*b, 0, z1 - (z1 - z0)*a, (x0 + (x1 - x0)*b)/sc, (z1 - (z1 - z0)*a)/sc]), 0, y, 0, { tex: t, shine: sh });
+  const ceilQ = (x0, z0, x1, z1, y, t, sc, col = "#ffffff") => root.g(col, grid(1, 1, (a, b) => [x0 + (x1 - x0)*b, 0, z0 + (z1 - z0)*a, (x0 + (x1 - x0)*b)/sc, (z0 + (z1 - z0)*a)/sc]), 0, y, 0, { tex: t, shine: 0 });
+  const OW = [T.offwhite, "#ffffff", .15], CH = [T.charcoal, "#ffffff", .1], WD = [T.woodWall, "#ffffff", .3], DK = [T.dark, "#ffffff", .2];
+  // floors: dark polished concrete in the studio, stone lobby, carpet in offices/pods/booths
+  floorQ(0, 4.5, WX, BZ, T.dark, 3, "#ffffff", .001, .7); floorQ(8, 0, 16, 4.5, T.stone, 2.4, "#ffffff", .001, .6); floorQ(0, 0, 8, 4.5, T.carpet, 2.4); floorQ(16, 0, 24, 4.5, T.carpet, 2.4);
+  floorQ(0, 5, 5, BZ, T.carpet, 2.4, "#7a6f80", .002); floorQ(6, 11, 19, 14.6, T.carpet, 2.4, "#8a93a8", .003); floorQ(0, BZ, WX, WZ, T.dark, 3, "#ffffff", BAL + .001, .6);
+  // ceilings: low drop ceilings in lobby/offices/booths, black open ceiling over the studio
+  ceilQ(0, 0, WX, 4.5, HL, T.ceil, 1.2); ceilQ(0, 4.5, 5, BZ, HL, T.ceil, 1.2, "#777777"); ceilQ(0, 4.5, WX, WZ, HS, null, 1, "#0d0e10");
+  for (let x = 1.5; x < WX; x += 3) for (let z = 1.2; z < 4.5; z += 2.2) { if (x > 7.5 && x < 16.5) continue; root.box("#d8d8d2", 1.22, .08, .62, x, HL - .04, z, PL); root.fl("#fffbea", 1.1, .5, x, HL - .081, z, { unlit: true }, [Math.PI, 0, 0]); }
+  for (let k = 0; k < 6; k++) { const x = 8.8 + k*1.3; root.cy("#1c1d20", .1, .1, .06, x, HL - .06, 1.6, MET); root.cy("#fff3d6", .07, .07, .002, x, HL - .061, 1.6, { unlit: true }); root.cy("#1c1d20", .1, .1, .06, x, HL - .06, 3.2, MET); root.cy("#fff3d6", .07, .07, .002, x, HL - .061, 3.2, { unlit: true }); }
+  // exterior shell
+  wall("x", 0, WX, -.1, .2, HL, [[12, 2.0, 2.4]], WD, CH); wall("x", -.2, WX + .2, WZ + .1, .2, HS, [], CH, CH); wall("z", -.2, WZ + .2, -.1, .2, HS, [], CH, CH); wall("z", -.2, WZ + .2, WX + .1, .2, HS, [], CH, CH);
+  root.box("#2b2d30", .08, 2.4, .08, 11, 1.2, -.1, MET); root.box("#2b2d30", .08, 2.4, .08, 13, 1.2, -.1, MET);
+  for (const sd of [-1, 1]) { const lf = root.sub(12 + sd*.98, 0, .05, sd*1.5); lf.box("#5f7f8f", .9, 2.3, .012, -sd*.45, 1.15, 0, { shine: 1 }); lf.box("#2b2d30", .9, .06, .05, -sd*.45, .03, 0, MET); lf.box("#2b2d30", .9, .06, .05, -sd*.45, 2.27, 0, MET); lf.box("#c9ced5", .03, .8, .03, -sd*.8, 1.1, .04, MET); }
+  // lobby: wood slat side walls, off-white logo wall with a lit reveal, opening into the studio
+  wall("x", 0, WX, 4.5, .2, HL, [[12, 4.0, 3.0], [4, 1.1, 2.3], [20, 1.1, 2.3]], OW, OW);
+  
+  wall("z", 0, 4.5, 8, .15, HL, [], WD, OW); wall("z", 0, 4.5, 16, .15, HL, [], WD, OW);
+  for (const x of [8.1, 15.9]) for (const y of [1.0, 2.6]) lit("z", .4, 4.1, x, y, x < 12 ? 1 : -1, "#d9b26a");
+  // offices: glass fronts onto the lobby side walls would hide them, so they open to the studio through doors in the z = 4.5 wall
+  // studio side walls: left = control room + radio booth behind glass, right = full-height LED wall beside the staircase
+  glassWall("z", 4.6, 5.6, 5, 2.8, null); glassWall("z", 6.8, 12.7, 5, 2.8, null); glassWall("z", 13.9, BZ, 5, 2.8, null); glassWall("x", 0, 5, 10.3, 2.8, null);
+  root.box("#141518", 5, .6, .2, 2.5, 3.1, 10.3, PL); root.box("#141518", .2, .6, BZ - 4.6, 5, 3.1, (4.6 + BZ)/2, PL);
+  for (const gz of [6.2, 13.3]) { root.box("#141518", .12, 2.8, .05, 5, 1.4, gz - .6, MET); root.box("#141518", .12, 2.8, .05, 5, 1.4, gz + .6, MET); root.box("#a9c4cf", .02, 2.6, .55, 5.12, 1.35, gz - .85, GLASS); }
+  wall("x", 0, 5, BZ + .05, .1, HL, [], CH, CH); wall("x", 5, 7, BZ + .05, .1, 3.0, [], CH, CH); wall("x", 17, 20.85, BZ + .05, .1, 3.0, [], CH, CH); wall("x", 22.55, WX, BZ + .05, .1, 3.0, [], CH, CH);
+  wall("x", 0, WX, 4.5, .2, HS - HL, [], OW, CH, HL);
+  wall("z", 4.6, BZ, 5, .1, HS - HL, [], CH, CH, HL); for (let y = 3.8; y < 6.6; y += .9) lit("z", 5, BZ, 5, y, 1, "#c8102e");
+  // right wall LED (x = 24) and big back LED wall under the balcony
+  TV.led(root.sub(WX - .06, .3, 9.5, -Math.PI/2), 9, 3.6, T.led, "#4a8cff"); TV.led(root.sub(12, .25, BZ - .02, Math.PI), 10, 2.7, T.led, "#c8102e");
+  for (let y = 4.5; y < 6.8; y += .7) lit("z", 4.6, BZ, WX, y, -1, "#4a8cff");
+  // balcony: slab, fascia with GNS logo, glass railing, workstations and clocks above
+  root.box("#1c1d20", WX, .3, WZ - BZ, WX/2, BAL - .15, (BZ + WZ)/2, PL); root.box("#e4e1da", WX, .5, .06, WX/2, BAL - .2, BZ - .03, { tex: T.offwhite, shine: .2 }); lit("x", 0, WX, BZ - .07, BAL - .42, -1, "#4a8cff");
+  root.pl("#ffffff", 3.6, .9, 4, BAL + 2.3, WZ - .01, { tex: T.gnsWall, unlit: true }, [0, Math.PI, 0]); root.pl("#ffffff", 3.6, .9, 18.5, BAL + 2.3, WZ - .01, { tex: T.gnsWall, unlit: true }, [0, Math.PI, 0]);
+  for (let x = .3; x < WX - .3; x += 1.2) { if (x > 20.6 && x < 22.8) continue; root.box("#a9c4cf", 1.16, .95, .02, x + .6, BAL + .5, BZ + .05, GLASS); root.box("#141518", .04, 1.0, .04, x, BAL + .5, BZ + .05, MET); }
+  root.box("#c9ced5", WX, .05, .06, WX/2, BAL + 1.02, BZ + .05, MET);
+  for (let k = 0; k < 4; k++) { const d = root.sub(3 + k*4.2, BAL, 16.9); d.rb("#ffffff", 1.6, .035, .75, 0, .7425, 0, { tex: T.laminate, shine: .45 }, .012); d.box("#1b1c1f", .04, .72, .7, -.75, .36, 0, MET); d.box("#1b1c1f", .04, .72, .7, .75, .36, 0, MET);
+    OFF.flat(d.sub(-.3, .76, .15, Math.PI + .15), k); OFF.flat(d.sub(.3, .76, .15, Math.PI - .15), k + 2); OFF.keyboard(d.sub(0, .76, -.12, Math.PI)); OFF.chair(d.sub(0, 0, -.9), "#1d1f24"); sol(3 + k*4.2 - .82, 16.5, 3 + k*4.2 + .82, 17.3); }
+  // staircase: 18 risers (0.178 m) from z 9 to 15.5 along the right LED wall, steel stringers, lit nosings, glass balustrade
+  const SX0 = 20.9, SX1 = 22.5, SZ0 = 9.2, NST = 18, TRD = (BZ - SZ0)/NST, RIS = BAL/NST;
+  for (let k = 0; k < NST; k++) { const z = SZ0 + k*TRD + TRD/2, y = (k + 1)*RIS; root.box("#6a4a30", SX1 - SX0, .05, TRD + .02, (SX0 + SX1)/2, y - .025, z, { tex: T.wood, shine: .5 }); root.box("#4a8cff", SX1 - SX0 - .1, .012, .012, (SX0 + SX1)/2, y - .004, z - TRD/2 + .01, { unlit: true }); }
+  for (const x of [SX0, SX1]) { const L = Math.hypot(BZ - SZ0, BAL), ang = Math.atan2(BAL, BZ - SZ0); root.box("#1c1d20", .06, .28, L, x, BAL/2 - .1, (SZ0 + BZ)/2, MET, [-ang, 0, 0]);
+    root.box("#a9c4cf", .02, .9, L, x, BAL/2 + .45, (SZ0 + BZ)/2, GLASS, [-ang, 0, 0]); root.box("#c9ced5", .05, .05, L, x, BAL/2 + .95, (SZ0 + BZ)/2, MET, [-ang, 0, 0]); }
+  sol(SX0 - .08, SZ0, SX0 + .02, BZ); sol(SX1 - .02, SZ0, SX1 + .08, BZ);
+  // studio ceiling: pipe lighting grid with fresnels aimed at the riser, rectangular light frames over the newsroom, hanging video panel
+  for (let x = 2; x < WX; x += 2) root.cy("#3a3c40", .025, .025, WZ - 4.6, x, 6.3, 4.6, MET, [Math.PI/2, 0, 0], 8);
+  for (let z = 5; z < WZ; z += 2.5) root.cy("#3a3c40", .025, .025, WX, 0, 6.3, z, MET, [0, 0, -Math.PI/2], 8);
+  for (const [x, z] of [[8, 5], [10, 5], [14, 5], [16, 5], [8, 7.5], [16, 7.5], [10, 10], [14, 10], [12, 5]]) fresnel(root.sub(x, 6.3, z), Math.atan2(12 - x, 8 - z), .55);
+  for (const [x, z, w, d] of [[7.5, 12.8, 3.4, 2.4], [12, 12.8, 3.4, 2.4], [16.5, 12.8, 3.4, 2.4]]) { root.box("#141518", w, .12, d, x, 5.2, z, MET); root.fl("#f6f2e6", w - .2, d - .2, x, 5.139, z, { unlit: true }, [Math.PI, 0, 0]); for (const sx of [-1, 1]) root.cy("#3a3c40", .01, .01, 1.1, x + sx*(w/2 - .1), 5.2, z, MET); }
+  { const v = root.sub(15.2, 4.2, 7.0, -.7); v.box("#0b0c0e", 1.3, 2.2, .1, 0, 0, 0, PL); v.pl("#ffffff", 1.2, 2.1, 0, 0, .051, { tex: T.ledV, unlit: true }); v.cy("#3a3c40", .015, .015, 1.0, 0, 1.1, 0, MET); }
+  /* ================= ROOMS ================= */
+  const place = (fn, x, z, ry, fp, ...args) => { fn(root.sub(x, 0, z, ry), ...args); if (fp) solA(x, z, fp[0], fp[1], ry); };
+  // lobby (8..16 x 0..4.5)
+  place(OFF.reception2, 12, 2.0, Math.PI, null); sol(10.2, 1.5, 13.8, 2.6); sol(9.9, 2.0, 10.6, 2.9); sol(13.4, 2.0, 14.1, 2.9); root.box("#e4e1da", 5.2, 2.6, .06, 12, 1.65, 4.37, { tex: T.offwhite, shine: .2 }); root.pl("#ffffff", 3.2, 1.6, 12, 1.85, 4.335, { tex: T.gnsWall, unlit: true }, [0, Math.PI, 0]);
+  lit("x", 9.4, 14.6, 4.33, .55, -1, "#c8102e"); lit("x", 9.4, 14.6, 4.33, 2.9, -1, "#c8102e");
+  for (let k = 0; k < 3; k++) place(OFF.visitor, 8.6, .9 + k*.8, Math.PI/2, [.6, .6], "#2a3a55");
+  place(plant, 8.6, 3.9, 0, [.5, .5]); place(plant, 15.4, 3.9, 0, [.5, .5]); place(plant, 15.4, .6, 0, [.5, .5]); root.pl("#ffffff", .6, .22, 12, 2.55, .02, { tex: T.exit, unlit: true });
+  // Ben Turner's office (0..8 x 0..4.5) and Richie's office (16..24 x 0..4.5): executive desk, chairs, files, shelves, art
+  for (const [cx, sgn, sign] of [[4, 1, T.signBen], [20, -1, T.signRich]]) { place(OFF.exec, cx, 2.0, 0, [2.05, .95]); place(OFF.chair, cx, 1.2, 0, null, "#3b2a22");
+    place(OFF.visitor, cx - .55, 3.25, Math.PI, [.6, .6], "#5a3a3a"); place(OFF.visitor, cx + .55, 3.25, Math.PI, [.6, .6], "#5a3a3a"); place(OFF.file, cx - sgn*3.6, .45, 0, [.5, .65]); place(OFF.file, cx - sgn*3.0, .45, 0, [.5, .65]);
+    root.fl("#5a2a2a", 3.2, 2.4, cx, .006, 2.2, { tex: T.fabric, shine: 0 }); place(plant, cx + sgn*3.5, .5, 0, [.5, .5], .9);
+    const sh = root.sub(cx + sgn*3.86, 0, 2.3, sgn > 0 ? -Math.PI/2 : Math.PI/2); for (let k = 0; k < 4; k++) { sh.box("#5c3a22", 1.6, .03, .32, 0, .4 + k*.5, 0, W); OFF.binders(sh.sub(-.6 + k*.2, .415 + k*.5, 0)); } sh.box("#5c3a22", .03, 2.1, .32, -.8, 1.05, 0, W); sh.box("#5c3a22", .03, 2.1, .32, .8, 1.05, 0, W);
+    solA(cx + sgn*3.86, 2.3, .34, 1.62); root.box("#3a2a1a", 1.0, .7, .03, cx, 1.9, .02, W); root.pl("#ffffff", .9, .6, cx, 1.9, .036, { tex: T.scr[1] }); root.pl("#ffffff", .9, .22, cx - 0*sgn, 2.55, 4.6 + .002, { tex: sign }); }
+  // newsroom pods (behind the anchor riser) — 12 workstations
+  [[7.5, 12.8], [12, 12.8], [16.5, 12.8]].forEach(([x, z], k) => { place(OFF.pod, x, z, 0, null, k*4); sol(x - 1.55, z - .82, x + 1.55, z + .82); });
+  // anchor riser + desk, three studio cameras facing it
+  TV.riser(root.sub(12, 0, 8.2)); TV.anchor(root.sub(12, .2, 8.2, Math.PI)); sol(9.6, 7.0, 14.4, 9.4);
+  OFF.chair(root.sub(11.4, .2, 9.1, Math.PI), "#101114"); OFF.chair(root.sub(12.6, .2, 9.1, Math.PI), "#101114");
+  for (const [x, z, ry] of [[9.2, 5.6, .45], [12, 5.3, 0], [14.8, 5.6, -.45]]) place(TV.camera, x, z, ry, [.9, .9]);
+  // control room (0..5 x 4.6..10.3) and radio booth (0..5 x 10.3..15.5)
+  place(TV.console, 2.4, 7.6, -Math.PI/2, [.95, 2.25]); place(OFF.chair, 3.5, 7.0, -Math.PI/2); place(OFF.chair, 3.5, 8.2, -Math.PI/2);
+  TV.wall(root.sub(.06, 1.0, 7.5, Math.PI/2)); for (let k = 0; k < 3; k++) RAD.panel(root.sub(2.5 + (k - 1)*1.3, 1.9, 4.62, 0), "#2a2c30");
+  place(RAD.desk, 2.2, 12.9, -Math.PI/2, [1.3, 2.6]); for (const [x, z, ry] of [[1.0, 12.2, Math.PI/2], [1.0, 13.6, Math.PI/2], [3.5, 12.9, -Math.PI/2]]) place(OFF.chair, x, z, ry);
+  for (let k = 0; k < 12; k++) { const onBack = k < 5, x = onBack ? .03 : .7 + ((k - 5) % 4)*1.15, z = onBack ? 10.9 + k*.95 : BZ - .03, y = 1.2 + ((k % 2) ? .72 : 0);
+    RAD.panel(root.sub(x, y, z, onBack ? Math.PI/2 : Math.PI), k % 2 ? "#5a1e26" : "#2a2c30"); }
+  root.pl("#ffffff", .7, .26, 5.1, 2.95, 13.3, { tex: T.onair, unlit: true }, [0, Math.PI/2, 0]);
+  // clutter and life: cooler, bins, plants, printer, wall clocks
+  place(cooler, 19.4, 5.2, 0, [.4, .4]); place(plant, 5.8, 5.2, 0, [.5, .5], 1.2); place(plant, 19.7, 14.9, 0, [.5, .5], 1.1); for (const [x, z] of [[9.6, 11.2], [14.3, 11.2], [18.7, 11.3]]) place(bin, x, z, 0, [.35, .35]);
+  place((p) => { p.rb("#d8d6d0", .6, .45, .5, 0, .6, 0, { shine: .3 }, .02); p.box("#3a3c40", .62, .38, .52, 0, .19, 0, PL); p.box("#f4f2ec", .21, .01, .3, 0, .83, .05, PL); p.box("#3f3", .02, .02, .01, .2, .7, .255, { unlit: true }); }, 6.1, 14.9, 0, [.65, .55]);
+  
+  // contact shadows under the big pieces (multiplied onto the floor)
+  const shade = (x, z, w, d, y = .004) => root.fl("#ffffff", w, d, x, y, z, { tex: shadowT, unlit: true, shade: true });
+  for (const [x, z] of [[7.5, 12.8], [12, 12.8], [16.5, 12.8]]) shade(x, z, 3.6, 2.6, .006); shade(12, 2.3, 3.4, 1.6); shade(4, 2.0, 2.6, 1.4, .009); shade(20, 2.0, 2.6, 1.4, .009); shade(12, 8.2, 5.8, 5.8, .002);
+  for (const [x, z] of [[9.2, 5.6], [12, 5.3], [14.8, 5.6]]) shade(x, z, 1.4, 1.4); shade(2.4, 7.6, 1.4, 2.6, .006); shade(2.2, 12.9, 1.6, 3.0, .006);
+  /* ---------- upload batches: opaque, glass (blended), shade (multiplied) ---------- */
+  const node0 = node([0, 0, 0]), glassN = node([0, 0, 0]), shadeN = node([0, 0, 0]);
+  for (const k in BATCH) { const B = BATCH[k]; for (const part of B.parts) { const m = mesh(part, B.col, { tex: B.o.tex, shine: B.o.shine != null ? B.o.shine : .05, unlit: B.o.unlit, cut: B.o.cut }); m.flat = 0; (B.o.glass ? glassN : B.o.shade ? shadeN : node0).meshes.push(m); } }
+  [node0, glassN, shadeN].forEach(n => computeWorld(n, ident())); for (const k in BATCH) delete BATCH[k];
   const at = (x, z) => [IO[0] + x, IO[2] + z];
-  return { root: node0, SOLID, WALLS, H, name: "GNS Studios", spawn: at(9, 1.1), spawnH: 0, exit: at(9, -.05), drawCalls: node0.meshes.length,
-    inBounds: (x, z) => x > IO[0] - 2 && x < IO[0] + 20 && z > IO[2] - 2 && z < IO[2] + 14 }; })();
+  // real light sources: [x, y, z, reach, r, g, b] (local) — downlights, newsroom light frames, studio fresnels, LED-wall spill, booth practicals
+  const WARM = [1.05, .9, .72], COOL = [.95, .98, 1.0], LIGHTS = [
+    [10, 3.1, 1.6, 4.48, ...WARM], [14, 3.1, 1.6, 4.48, ...WARM], [10, 3.1, 3.4, 4.48, ...WARM], [14, 3.1, 3.4, 4.48, ...WARM],
+    [3, 3.1, 1.8, 4.97, ...WARM], [5.5, 3.1, 3, 4.48, ...WARM], [21, 3.1, 1.8, 4.97, ...WARM], [18.5, 3.1, 3, 4.48, ...WARM],
+    [7.5, 4.9, 12.8, 6.9, 1.15, 1.13, 1.08], [12, 4.9, 12.8, 6.9, 1.15, 1.13, 1.08], [16.5, 4.9, 12.8, 6.9, 1.15, 1.13, 1.08],
+    [12, 5.8, 5.5, 8.0, 1.5, 1.32, 1.1], [9.5, 5.8, 7.5, 6.0, 1.1, 1.0, .85], [14.5, 5.8, 7.5, 6.0, 1.1, 1.0, .85],
+    [12, 1.6, 14.4, 6.48, .25, .45, 1.1], [22.6, 2.2, 9.5, 6.48, .25, .45, 1.1], [15.2, 4.2, 6.6, 3.45, .5, .4, .9],
+    [2.5, 3.1, 6.6, 4.48, ...COOL], [2.5, 3.1, 9.0, 4.48, ...COOL], [1.6, 1.8, 7.5, 3.03, .25, .45, 1.0],
+    [2.5, 3.1, 12.9, 4.97, 1.0, .8, .65], [5.6, 2.9, 13.3, 2.48, 1.0, .25, .2],
+    [4, 6.3, 16.8, 6.9, 1.0, .95, .85], [12, 6.3, 16.8, 6.9, 1.0, .95, .85], [20, 6.3, 16.8, 6.9, 1.0, .95, .85],
+    [6, 6.0, 8, 8.97, .55, .55, .6], [18, 6.0, 8, 8.97, .55, .55, .6], [19.4, 2.5, 5.5, 3.03, .9, .9, .95] ].map(l => [IO[0] + l[0], l[1], IO[2] + l[2], l[3], l[4], l[5], l[6]]);
+  const PLv = new Float32Array(48), PCv = new Float32Array(36);
+  function lightsNear(x, y, z) { const L = LIGHTS.map(l => [Math.hypot(l[0] - x, l[1] - y, l[2] - z) - l[3], l]).sort((a, b) => a[0] - b[0]).slice(0, 12);
+    for (let i = 0; i < 12; i++) { const l = L[i][1]; PLv.set([l[0], l[1], l[2], l[3]], i*4); PCv.set([l[4], l[5], l[6]], i*3); } return [PLv, PCv]; }
+  // walkable height: ground, staircase, balcony
+  const floorY = (x, z) => { const lx = x - IO[0], lz = z - IO[2]; if (lz >= BZ) return BAL; if (lx > SX0 && lx < SX1 && lz > SZ0) return Math.min(BAL, Math.ceil((lz - SZ0)/TRD)*RIS); return 0; };
+  const ceilY = (x, z) => { const lx = x - IO[0], lz = z - IO[2]; return lz < 4.5 || (lx < 5 && lz < BZ) ? HL : HS; };
+  const ROOMS = [[8, 0, 16, 4.5, "Lobby"], [0, 0, 8, 4.5, "Ben Turner's office"], [16, 0, 24, 4.5, "Richie's office"], [0, 4.5, 5, 10.3, "Control room"], [0, 10.3, 5, BZ, "Radio booth"], [0, BZ, 24, 18, "Balcony"], [5, 4.5, 24, BZ, "Studio & newsroom"]];
+  return { lightsNear, root: node0, glass: glassN, shade: shadeN, SOLID, WALLS, H: HS, floorY, ceilY, name: "GNS Studios", spawn: at(12, 1.0), exit: at(12, -.05), drawCalls: node0.meshes.length + glassN.meshes.length + shadeN.meshes.length,
+    room: (x, z) => { const lx = x - IO[0], lz = z - IO[2]; const r = ROOMS.find(r => lx >= r[0] && lx < r[2] && lz >= r[1] && lz < r[3]); return r ? r[4] : "GNS Studios"; },
+    bounds: [IO[0] + .25, IO[2] + .25, IO[0] + WX - .25, IO[2] + WZ - .25], inBounds: (x, z) => x > IO[0] - 2 && x < IO[0] + WX + 2 && z > IO[2] - 2 && z < IO[2] + WZ + 2 }; })();
 
 /* ---------- game: walk the Finance District ---------- */
 let W = 0, H = 0; const PHONE = matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 820;
@@ -1825,7 +1985,7 @@ const up_ = e => { if (e.pointerId === stick.id) { stick.id = null; stick.x = st
 canvas.addEventListener("pointerup", up_); canvas.addEventListener("pointercancel", up_);
 canvas.addEventListener("wheel", e => { e.preventDefault(); camDist = Math.max(2.2, Math.min(14, camDist*(1 + e.deltaY*.001))); }, { passive: false });
 const inBox = (x, z, b, r) => x > b[0] - r && x < b[2] + r && z > b[1] - r && z < b[3] + r;
-function blocked(x, z) { if (inside) { for (const b of INTERIOR.SOLID) if (inBox(x, z, b, .25)) return true; return false; } for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const c of allCars()) if (!(pl.inCar && c === myCar) && carHit(c, x, z, .2)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (!n.down && Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; const E = CITY.EDGE - .4; return x < L.roads[0][0] - E || x > L.roads[L.roads.length - 1][1] + E || z < Z.roads[0][0] - E || z > Z.roads[Z.roads.length - 1][1] + E; }
+function blocked(x, z) { if (inside) { for (const b of INTERIOR.SOLID) if (inBox(x, z, b, .25)) return true; return Math.abs(INTERIOR.floorY(x, z) - pl.y) > .45; } for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const c of allCars()) if (!(pl.inCar && c === myCar) && carHit(c, x, z, .2)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (!n.down && Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; const E = CITY.EDGE - .4; return x < L.roads[0][0] - E || x > L.roads[L.roads.length - 1][1] + E || z < Z.roads[0][0] - E || z > Z.roads[Z.roads.length - 1][1] + E; }
 gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
 let last = 0; const label = document.getElementById("where");
 pl.inCar = false;
@@ -2000,7 +2160,7 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   if (ml > .05 && !punching) { const want = Math.atan2(mx, mz); let d = want - pl.h; d = Math.atan2(Math.sin(d), Math.cos(d)); pl.h += d*Math.min(1, dt*10); }
   const nx = pl.x + Math.sin(pl.h)*pl.sp*dt, nz = pl.z + Math.cos(pl.h)*pl.sp*dt;
   if (!blocked(nx, pl.z)) pl.x = nx; if (!blocked(pl.x, nz)) pl.z = nz;
-  pl.y += ((inside ? 0 : CITY.groundY(pl.x, pl.z)) - pl.y)*Math.min(1, dt*14); doorCheck(t);
+  pl.y += ((inside ? INTERIOR.floorY(pl.x, pl.z) : CITY.groundY(pl.x, pl.z)) - pl.y)*Math.min(1, dt*14); doorCheck(t);
   if (pl.inCar && !wastedT) { myCar.drive(dt, Math.max(-1, Math.min(1, cIz)), Math.max(-1, Math.min(1, cIx)), !!keys.Space, carHitFn); pl.x = myCar.x; pl.z = myCar.z; pl.y = myCar.y; pl.sp = 0; }
   else if (myCar) myCar.drive(dt, 0, 0, true, carHitFn);
   if (pl.inCar && wastedT) myCar.drive(dt, 0, 0, true, carHitFn);
@@ -2014,8 +2174,8 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   if (preview) { if (!camDrag) camYaw += dt*.35; tgt = [preview.x, PHONE ? -.6 : .8, preview.z]; camD = cd = 7.2; }
   for (let k = .5; k <= camD && !preview; k += .25) { const x = tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*k, z = tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*k; if ((inside ? INTERIOR.WALLS : CITY.SOLID).some(b => inBox(x, z, b, .25))) { cd = Math.max(.6, k - .3); break; } }
   if (inside) cd = Math.min(cd, 3.6);
-  const eye = [tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*cd, Math.max(pl.y + .4, tgt[1] + Math.sin(camPitch)*cd), tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*cd]; if (inside) eye[1] = Math.min(eye[1], INTERIOR.H - .2);
-  if (INTERIOR.inBounds(pl.x, pl.z)) { eye[0] = Math.max(4000.25, Math.min(4017.75, eye[0])); eye[2] = Math.max(4000.25, Math.min(4011.75, eye[2])); }
+  const eye = [tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*cd, Math.max(pl.y + .4, tgt[1] + Math.sin(camPitch)*cd), tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*cd]; if (inside) eye[1] = Math.min(eye[1], INTERIOR.ceilY(pl.x, pl.z) + (pl.y > 1 ? 3 : 0) - .2);
+  if (inside) { const B = INTERIOR.bounds; eye[0] = Math.max(B[0], Math.min(B[2], eye[0])); eye[2] = Math.max(B[1], Math.min(B[3], eye[2])); }
   const VP = mul(persp(55*Math.PI/180, W/H, .1, 1600), lookAt(eye, tgt));
   const n = night;
   // animate everyone first (the shadow pass needs their poses)
@@ -2032,14 +2192,15 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   if (inside) { gl.clearColor(.05, .05, .06, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
   else { SKY.draw(VP, eye, n); CITY.shadow(LVP || ident(), LVP ? 1 : 0); CITY.draw(VP, eye, n, t); TREES.draw(VP, eye, tgt, n, t); }
   gl.useProgram(prog); [A.P, A.N, A.U].forEach(a => gl.enableVertexAttribArray(a)); gl.uniform1i(U.uT, 0); gl.uniform1f(dimLoc, 1 - .62*n);
-  gl.uniformMatrix4fv(CU("uShVP"), false, LVP || ident()); gl.uniform1f(CU("uShOn"), LVP ? 1 : 0); gl.uniform1i(CU("uShTex"), 2); gl.uniform3fv(CU("uSunD"), inside ? [.28, .9, .33] : SUND); gl.uniform1f(CU("uNightC"), inside ? 0 : n); if (inside) gl.uniform1f(dimLoc, 1);
-  gl.uniformMatrix4fv(U.uVP, false, VP); gl.uniform3fv(U.uEye, eye);
+  gl.uniformMatrix4fv(CU("uShVP"), false, LVP || ident()); gl.uniform1f(CU("uShOn"), LVP ? 1 : 0); gl.uniform1i(CU("uShTex"), 2); { const dx = eye[0] - tgt[0], dz = eye[2] - tgt[2], l = Math.hypot(dx, dz) || 1, v = [dx/l*.7, 1.1, dz/l*.7], n0 = Math.hypot(...v); gl.uniform3fv(CU("uSunD"), inside ? v.map(q => q/n0) : SUND); } gl.uniform1f(CU("uNightC"), inside ? 0 : n); if (inside) gl.uniform1f(dimLoc, 1.12);
+  gl.uniformMatrix4fv(U.uVP, false, VP); gl.uniform3fv(U.uEye, eye); gl.uniform1f(CU("uIn"), inside ? 1 : 0); if (inside) { const [pl4, pc3] = INTERIOR.lightsNear((eye[0] + tgt[0])/2, (eye[1] + tgt[1])/2, (eye[2] + tgt[2])/2); gl.uniform4fv(CU("uPL[0]"), pl4); gl.uniform3fv(CU("uPC[0]"), pc3); }
   for (const c of live) { const h = c.h; if (c.car) { drawTree(h); continue; } shadowN.t = [h.t[0], h.t[1] + .02, h.t[2]]; computeWorld(shadowN, ident());
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); drawTree(shadowN); gl.disable(gl.BLEND); gl.depthMask(true);
     drawTree(h); const I = ident(); for (const m of c.sks) drawMesh(m, I); }
+  if (inside) { gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); drawTree(INTERIOR.shade); gl.blendColor(0, 0, 0, .28); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); drawTree(INTERIOR.glass); gl.disable(gl.BLEND); gl.depthMask(true); }
   [A.P, A.N, A.U].forEach(a => gl.disableVertexAttribArray(a));
   if (actB) { const k = actState(); actB.hidden = !k; if (k) actB.textContent = { get: "Choose a car (E)", enter: "Get in (E)", exit: "Get out (E)", jack: "Steal car (E)" }[k]; }
-  if (((t*4)|0) % 2 === 0 && t > doorMsgT) label.textContent = inside ? INTERIOR.name : streetName(pl.x, pl.z);
+  if (((t*4)|0) % 2 === 0 && t > doorMsgT) label.textContent = inside ? INTERIOR.room(pl.x, pl.z) : streetName(pl.x, pl.z);
   requestAnimationFrame(frame); }
 function drawMesh(g, M) {
   gl.uniformMatrix4fv(U.uM, false, M); gl.uniform3fv(U.uC, g.color); gl.uniform1f(U.uShine, g.shine); gl.uniform1f(U.uUnlit, g.unlit ? 1 : 0); gl.uniform1f(U.uCut, g.cut ? 1 : 0); gl.uniform1f(U.uFlat, g.flat);

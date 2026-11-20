@@ -25,8 +25,9 @@ button[aria-pressed="true"]{background:#f4f1ea;color:#11151c}button:focus-visibl
 <canvas id="c" aria-label="Third-person view of your character on the streets of the Finance District"></canvas>
 <div class="hud tl"><b>Finance District</b><span id="where">Exchange St &amp; Calloway Ave</span></div>
 <button type="button" id="nightB" aria-pressed="false">Day</button>
-<div class="hud keys">WASD / arrows to walk · Shift to run · F to punch · drag to look · scroll to zoom · N for night</div>
+<div class="hud keys">WASD / arrows to walk · Shift to run · F to punch · E for cars · Space brake · drag to look · scroll to zoom · N for night</div>
 <div class="pad"><button type="button" id="runB" aria-pressed="false">Run</button><button type="button" id="punchB">Punch</button></div>
+<button type="button" id="actB" hidden style="position:fixed;left:50%;bottom:86px;transform:translateX(-50%);background:#f4f1ea;color:#11151c;min-height:52px;padding:0 22px;font-size:16px">Get a car (E)</button>
 <div id="stick" hidden><div id="knob"></div></div>
 <p id="err" hidden></p>
 <div class="hide"><div id="stats"></div><div id="look"></div><div id="moves"></div></div>
@@ -955,6 +956,26 @@ function dumpster(px, pz, rot, v) {
   const hx = rot ? 1.05 : 1.95, hz = rot ? 1.95 : 1.05; SOLID.push([px - hx, pz - hz, px + hx, pz + hz]);
 }
 
+
+// ---- public parking garage (where you get a car) ----
+const signT = facade(512, 128, (g, w, h) => { g.translate(0, h); g.scale(1, -1); g.fillStyle = "#123a7a"; g.fillRect(0, 0, w, h); g.strokeStyle = "#e9eef6"; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
+  g.fillStyle = "#fff"; g.fillRect(24, 22, 84, 84); g.fillStyle = "#123a7a"; g.font = "bold 76px Arial"; g.textAlign = "center"; g.fillText("P", 66, 92);
+  g.fillStyle = "#fff"; g.font = "bold 58px Arial"; g.textAlign = "left"; g.fillText("PARKING", 130, 84); g.font = "bold 20px Arial"; g.fillStyle = "#ffd34d"; g.fillText("PUBLIC · 24 HRS", 132, 112); });
+let GARAGE = null;
+function garage(x0, z0, x1, z1) { SOLID.push([x0, z0 + .4, x1, z1]); const cx = (x0 + x1)/2, ew = 7;
+  for (const y of [0, 3.4, 6.8, 10.2]) { box(g("conc"), x0, y === 0 ? SWY : y - .35, z0, x1, y === 0 ? SWY + .2 : y, z1);
+    if (y < 10) for (let x = x0 + .4; x <= x1 - .3; x += (x1 - x0 - .8)/4) for (let z = z0 + .4; z <= z1 - .3; z += (z1 - z0 - .8)/4) box(g("conc"), x - .3, y, z - .3, x + .3, y + 3.1, z + .3);
+    if (y > 0) { box(g("concW"), x0, y, z0, x1, y + 1.05, z0 + .25); box(g("concW"), x0, y, z1 - .25, x1, y + 1.05, z1); box(g("concW"), x0, y, z0, x0 + .25, y + 1.05, z1); box(g("concW"), x1 - .25, y, z0, x1, y + 1.05, z1); } }
+  // ground floor walls with the car entrance on the street side
+  box(g("concW"), x0, SWY, z0, cx - ew/2, 3.0, z0 + .3); box(g("concW"), cx + ew/2, SWY, z0, x1, 3.0, z0 + .3); box(g("concW"), x0, SWY, z1 - .3, x1, 3.0, z1);
+  box(g("concW"), x0, SWY, z0, x0 + .3, 3.0, z1); box(g("concW"), x1 - .3, SWY, z0, x1, 3.0, z1);
+  box(g("stripe"), cx - ew/2, 2.75, z0 - .02, cx + ew/2, 3.05, z0 + .3);                                             // yellow-black clearance bar
+  box(g("gsign"), cx - 3.6, 3.5, z0 - .5, cx + 3.6, 5.0, z0 - .2);                                                 // PARKING sign over the door
+  box(g("gate"), cx - ew/2 + .3, .9, z0 - .6, cx - .3, 1.02, z0 - .5); box(g("pole"), cx - ew/2 + .2, SWY, z0 - .7, cx - ew/2 + .4, 1.1, z0 - .45);   // barrier arm
+  box(g("booth"), cx + ew/2 + .4, SWY, z0 - 2.2, cx + ew/2 + 2, 2.6, z0 - .4); box(g("roof"), cx + ew/2 + .2, 2.6, z0 - 2.4, cx + ew/2 + 2.2, 2.8, z0 - .2);
+  SOLID.push([cx + ew/2 + .4, z0 - 2.2, cx + ew/2 + 2, z0 - .4]);
+  GARAGE = { door: [cx, z0 - 2.6], x0, x1, z0 }; }
+
 // ground: asphalt everywhere, plus a big outer field
 box(g("asph"), LX.roads[0][0] - 400, -1, LZ.roads[0][0] - 400, LX.roads[4][1] + 400, 0, LZ.roads[4][1] + 400);
 
@@ -985,7 +1006,9 @@ LX.blocks.forEach((bx, i) => LZ.blocks.forEach((bz, j) => {
   lampRow(x0 + .8, z0 + 6, x0 + .8, z1 - 6, -1, 0); lampRow(x1 - .8, z0 + 6, x1 - .8, z1 - 6, 1, 0);
 }));
 
+
 function building(x0, z0, x1, z1, core, open) {
+  if (!GARAGE && open.n && open.w && x1 - x0 > 22 && LX.blocks[2][0] < x0 && x0 < LX.blocks[2][1] && LZ.blocks[2][0] < z0 && z0 < LZ.blocks[2][1]) { garage(x0, z0, x1, Math.min(z1, z0 + 34)); return; }
   const w = x1 - x0, d = z1 - z0, cx = (x0 + x1)/2, cz = (z0 + z1)/2;
   SOLID.push([x0, z0, x1, z1]);
   const tower = core > .35 && w > 24 && d > 24 && R() < .3 + core;
@@ -1073,10 +1096,11 @@ function drawM(m, tex, kind, cell, tile, colr) { if (!m) return; gl.bindBuffer(g
 const alFlat = ALLEYS.slice(0, 32).flat(); while (alFlat.length < 128) alFlat.push(1e5, 1e5, 1e5, 1e5);
 const C = { white: [.86, .86, .82], yellow: [.86, .7, .2], curb: [.62, .61, .58], red: [.65, .1, .08], gnsBox: [.12, .25, .6], apBox: [.7, .12, .1], metal: [.2, .2, .21], wood: [.38, .26, .16], bin: [.16, .24, .18],
   pole: [.12, .17, .14], manhole: [.18, .18, .19], median: [.6, .59, .56], hedge: [.16, .3, .14], roof: [.5, .49, .47], sigBox: [.12, .12, .1], stop: [.75, .08, .06],
+  conc: [.66, .64, .6], concW: [.6, .58, .54], stripe: [.9, .72, .1], gate: [.85, .15, .1], booth: [.8, .78, .7],
   dm: [.45, .47, .47], dd: [.09, .1, .11], db: [.07, .08, .09], dr: [.36, .22, .16], drb: [.09, .1, .1], di: [.2, .24, .24], dpap: [.72, .7, .64], dcard: [.55, .47, .35],
   awnR: [.55, .1, .1], awnG: [.1, .32, .2], awnB: [.12, .2, .45], awnK: [.12, .12, .13] };
 return {
-  SOLID, LX, LZ, CX, CZ, ALLEYS, TREES,
+  SOLID, LX, LZ, CX, CZ, ALLEYS, TREES, get GARAGE() { return GARAGE; },
   shadow(m, on) { gl.useProgram(pr); gl.uniformMatrix4fv(U("uShVP"), false, m); gl.uniform1i(U("uShTex"), 2); gl.uniform1f(U("uShOn"), on); gl.uniform1f(U("uShTexel"), PHONE ? 1/1024 : 1/2048); },
   depth(fn) { for (const k in M) if (!/^(asph|pave|alley|pool|white|yellow|dtr|dec0|dec1|lamp|far.*)$/.test(k)) fn(M[k]); },
   // ground height at a point (sidewalks raised)
@@ -1090,6 +1114,7 @@ return {
     for (const k in C) drawM(M[k], null, 2, null, null, C[k]);
     drawM(M.dp0, dPaint[0], 4, null, [3.6, 1.8], [1, 1, 1]); drawM(M.dp1, dPaint[1], 4, null, [3.6, 1.8], [1, 1, 1]); drawM(M.dtr, trashT, 4, null, [1, 1], [1, 1, 1]);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); drawM(M.dec0, dDecal[0], 6); drawM(M.dec1, dDecal[1], 6); gl.depthMask(true); gl.disable(gl.BLEND);
+    drawM(M.gsign, signT, 4, null, [7.2, 1.5], [1, 1, 1]);
     drawM(M.lamp, null, 3, null, null, n > .5 ? [1, .86, .6] : [.7, .7, .66]);
     // signals: NS green 0-12s, yellow 12-15, then EW green 15-27, yellow 27-30
     const ph = t % 30, NSs = ph < 12 ? "G" : ph < 15 ? "Y" : "R", EWs = ph < 15 ? "R" : ph < 27 ? "G" : "Y";
@@ -1219,8 +1244,73 @@ return {
     for (const t of LIST) { const dx = t.x - eye[0], dz = t.z - eye[2], d = Math.hypot(dx, dz); if (d > 330 || (d > 12 && dx*fx + dz*fz < 0)) continue;
       gl.uniform3fv(U("uOff"), [t.x, t.y, t.z]); gl.uniform1f(U("uRot"), t.rot);
       if (t.k === "oak") { const V = OAKS[t.v]; draw(PIT, pitTex, 0); draw(V.bark, barkTex, 0); draw(V.leaf, leafTex, 1); }
-      else { const V = PALMS[t.v]; draw(V.bark, palmBarkTex, 0); draw(V.crown, crownTex, 0, [.9, 1, .85]); draw(V.frond, frondTex, 1); } }
+      else { const V = PALMS[t.v]; draw(PIT, pitTex, 0); draw(V.bark, palmBarkTex, 0); draw(V.crown, crownTex, 0, [.9, 1, .85]); draw(V.frond, frondTex, 1); } }
     [aP, aN, aU, aF].forEach(a => gl.disableVertexAttribArray(a)); } };
+})();
+
+/* ---------- the car: a lofted 4-door sedan (smooth body, glass painted on), arcade driving ---------- */
+const CAR = (function () {
+  // stations along the car (z, front +): [z, bottom, beltline, top, body half-width, top half-width]
+  const ST = [[-2.32, .36, .6, .7, .76, .7], [-2.26, .3, .74, .9, .85, .8], [-2.0, .28, .82, .98, .89, .85], [-1.45, .28, .86, 1.0, .9, .86], [-1.15, .28, .87, 1.3, .9, .68],
+    [-.75, .28, .87, 1.42, .9, .66], [.4, .28, .87, 1.43, .9, .66], [.8, .28, .87, 1.22, .9, .7], [1.1, .28, .86, .99, .9, .84], [1.7, .29, .82, .92, .88, .83],
+    [2.15, .31, .73, .84, .85, .78], [2.32, .38, .6, .7, .76, .68]];
+  const at = z => { for (let k = 0; k < ST.length - 1; k++) { const A = ST[k], B = ST[k + 1]; if (z <= B[0]) { const f = (z - A[0])/(B[0] - A[0]), s = f*f*(3 - 2*f), m = (a, b) => a + (b - a)*(.5*f + .5*s); return A.map((v, i) => m(v, B[i])); } } return ST[ST.length - 1]; };
+  const PTS = (z) => { const [, yb, be, tp, hw, tw] = at(z); const r = [[0, yb], [hw*.9, yb], [hw, yb + .1], [hw, be - .07], [hw*.985, be], [tw, tp - .08], [tw*.88, tp - .015], [tw*.55, tp], [0, tp]];
+    const l = r.slice(0, -1).reverse().map(([x, y]) => [-x, y]); return r.concat(l); };
+  const NC = PTS(0).length - 1, ROWS = 40, Z0 = -2.32, Z1 = 2.32, vOf = z => (z - Z0)/(Z1 - Z0);
+  // paint: body colour, glass on the greenhouse sides and the sloped windscreens, dark sills
+  const glassU = [[4, 5], [NC - 5, NC - 4]], topU = [5, NC - 5];
+  function paint(col) { const c = document.createElement("canvas"); c.width = 256; c.height = 512; const g = c.getContext("2d"), w = 256, h = 512, U = i => i/NC*w, V = z => vOf(z)*h;
+    g.fillStyle = col; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgba(255,255,255,.06)"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(0, 0, U(1.5), h); g.fillRect(U(NC - 1.5), 0, w, h);                                    // underside / sills
+    g.fillStyle = "rgba(0,0,0,.25)"; g.fillRect(U(2.6), 0, 3, h); g.fillRect(U(NC - 2.6), 0, 3, h);                                    // body side crease
+    const glass = "#141c24";
+    for (const [a, b] of glassU) { g.fillStyle = glass; g.fillRect(U(a) + 2, V(-1.08), U(b) - U(a) - 2, V(.78) - V(-1.08)); g.fillStyle = col; g.fillRect(U(a), V(-.2), U(b) - U(a), V(-.08) - V(-.2)); }   // windows + B-pillar
+    g.fillStyle = glass; g.fillRect(U(topU[0]), V(.47), U(topU[1]) - U(topU[0]), V(1.0) - V(.47)); g.fillRect(U(topU[0]), V(-1.4), U(topU[1]) - U(topU[0]), V(-.8) - V(-1.4));
+    g.fillStyle = "rgba(255,255,255,.18)"; g.fillRect(U(topU[0]) + 10, V(.55), 40, 30);                                                   // windscreen glint
+    for (const z of [-.25, .95]) { g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(U(2.2), V(z), U(4) - U(2.2), 2); g.fillRect(U(NC - 4), V(z), U(4) - U(2.2), 2); }   // door cuts
+    for (const x of [U(3.4), U(NC - 3.4)]) { g.fillStyle = "rgba(0,0,0,.4)"; g.fillRect(x - 8, V(.2), 16, 5); g.fillRect(x - 8, V(-.65), 16, 5); }                  // handles
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]].forEach(([k, v]) => gl.texParameteri(gl.TEXTURE_2D, k, v)); c.width = c.height = 1; return t; }
+  const capTex = front => tex(256, 128, (g, w, h) => { g.fillStyle = "#1a1a1c"; g.fillRect(0, 0, w, h);
+    if (front) { g.fillStyle = "#0c0c0e"; g.fillRect(w*.32, h*.35, w*.36, h*.3); g.strokeStyle = "#9aa0a8"; g.lineWidth = 3; g.strokeRect(w*.32, h*.35, w*.36, h*.3); for (let y = h*.4; y < h*.62; y += 7) { g.fillStyle = "#555"; g.fillRect(w*.33, y, w*.34, 2); }
+      for (const x of [.06, .7]) { g.fillStyle = "#f4f2e8"; g.fillRect(w*x, h*.3, w*.24, h*.22); g.strokeStyle = "#888"; g.strokeRect(w*x, h*.3, w*.24, h*.22); } }
+    else { for (const x of [.04, .7]) { g.fillStyle = "#b3141a"; g.fillRect(w*x, h*.28, w*.26, h*.22); g.fillStyle = "#f0a020"; g.fillRect(w*x + (x < .5 ? 0 : w*.18), h*.28, w*.08, h*.22); }
+      g.fillStyle = "#e8e2c8"; g.fillRect(w*.38, h*.36, w*.24, h*.16); g.fillStyle = "#222"; g.font = "bold 16px Arial"; g.textAlign = "center"; g.fillText("AV 2026", w/2, h*.48); }
+    g.fillStyle = "#2b2b2e"; g.fillRect(0, h*.62, w, h*.2); });
+  const COLORS = ["#b8bcc2", "#7a1420", "#1d2a44", "#e8e6df", "#14161a", "#2f5a3c", "#c9a24a", "#2d6b8f"];
+  const bodyTex = COLORS.map(paint);
+  const root = node(), body = node(); root.kids.push(body);
+  const bodyG = grid(ROWS, NC, (a, b, r, c) => { const z = Z0 + (Z1 - Z0)*a, P = PTS(z)[c]; return [P[0], P[1], z, c/NC, a]; });
+  add(body, bodyG, "#ffffff", { tex: bodyTex[0], flat: 0, shine: .9 });
+  for (const [z, front] of [[Z0, false], [Z1, true]]) { const P = PTS(z), cy = (P[0][1] + P[8][1])/2;
+    add(body, grid(3, NC, (a, b, r, c) => { const k = 1 - a, q = P[c]; return [q[0]*k, cy + (q[1] - cy)*k, z + (front ? .012 : -.012)*a, .5 + q[0]/2, 1 - (q[1] - .28)/.75]; }), "#ffffff", { tex: capTex(front), flat: 0, shine: .4 }); }
+  // mirrors, bumpers
+  for (const s of [-1, 1]) add(body, boxG(.14, .08, .12, [s*.98, .95, .82]), COLORS[0], { shine: .5 });
+  add(body, boxG(1.6, .14, .14, [0, .4, 2.3]), "#1c1c1e", { shine: .2 }); add(body, boxG(1.6, .14, .14, [0, .4, -2.3]), "#1c1c1e", { shine: .2 });
+  // wheels: tyre with rounded sidewall + alloy face
+  const wheels = [];
+  for (const [x, z, front] of [[.79, 1.38, 1], [-.79, 1.38, 1], [.79, -1.38, 0], [-.79, -1.38, 0]]) { const w = node([x, .33, z]), spin = node(); w.kids.push(spin); root.kids.push(w);
+    const T = [[-.11, 0], [-.11, .24], [-.105, .3], [-.07, .33], [.07, .33], [.105, .3], [.11, .24], [.11, 0]];
+    add(spin, grid(T.length - 1, 20, (a, b, r) => { const ang = b*Math.PI*2, [xx, rr] = T[r]; return [xx, Math.cos(ang)*rr, Math.sin(ang)*rr]; }), "#1b1b1d", { flat: 0, shine: .1 });
+    const o = x > 0 ? .112 : -.112; add(spin, grid(2, 20, (a, b, r) => { const ang = b*Math.PI*2, rr = [0, .12, .22][r]; return [o + (x > 0 ? .006 : -.006)*(2 - r), Math.cos(ang)*rr, Math.sin(ang)*rr]; }), "#c4c8cf", { flat: .3, shine: .9 });
+    for (let k = 0; k < 5; k++) { const a = k/5*Math.PI*2; add(spin, boxG(.02, .2, .045, [o + (x > 0 ? .012 : -.012), Math.cos(a)*.11, Math.sin(a)*.11]), "#8d929a", { shine: .7 }); }
+    wheels.push({ w, spin, front }); }
+  const st = { on: false, x: 0, y: 0, z: 0, h: 0, v: 0, steer: 0, roll: 0, col: 0 };
+  function corners(x, z, h) { const s = Math.sin(h), c = Math.cos(h); return [[.9, 2.3], [-.9, 2.3], [.9, -2.3], [-.9, -2.3], [0, 2.3], [0, -2.3]].map(([a, b]) => [x + c*a + s*b, z - s*a + c*b]); }
+  return { st, root, SOLID: () => st.on ? [[st.x - 1.2, st.z - 1.2, st.x + 1.2, st.z + 1.2]] : [],
+    spawn(x, z, h) { st.on = true; st.x = x; st.z = z; st.h = h; st.v = 0; st.col = (st.col + 1 + (Math.random()*5 | 0)) % COLORS.length; body.meshes[0].tex = bodyTex[st.col]; },
+    update(dt, thr, steerIn, brake, blockedFn) { if (!st.on) return;
+      const maxV = 24, acc = thr > 0 ? (st.v < 0 ? 14 : 7.5) : thr < 0 ? (st.v > 0 ? -14 : -5) : 0;
+      st.v += acc*thr*Math.sign(thr || 1)*dt*(thr ? 1 : 0); if (thr > 0) st.v = Math.min(maxV, st.v); if (thr < 0) st.v = Math.max(-7, st.v);
+      if (!thr) st.v *= Math.pow(.6, dt); if (brake) st.v *= Math.pow(.05, dt); if (Math.abs(st.v) < .05 && !thr) st.v = 0;
+      st.steer += (steerIn*.55 - st.steer)*Math.min(1, dt*6);
+      const dh = st.v*Math.tan(st.steer)/2.76*dt*(brake ? 1.35 : 1), nh = st.h - dh, nx = st.x + Math.sin(nh)*st.v*dt, nz = st.z + Math.cos(nh)*st.v*dt;
+      if (corners(nx, nz, nh).some(([x, z]) => blockedFn(x, z))) { st.v *= -.25; } else { st.x = nx; st.z = nz; st.h = nh; }
+      st.y += (CITY.groundY(st.x, st.z) - st.y)*Math.min(1, dt*10); st.roll += (-st.steer*st.v*.012 - st.roll)*Math.min(1, dt*4);
+      for (const W of wheels) { W.spin.r[0] += st.v/.33*dt; if (W.front) W.w.r[1] = -st.steer; } },
+    place() { root.t = [st.x, st.y, st.z]; root.r[1] = st.h; body.r[2] = st.roll; computeWorld(root, ident()); } };
 })();
 
 /* ---------- game: walk the Finance District ---------- */
@@ -1325,7 +1415,7 @@ function updateNPC(n, dt) {
 // player starts on the Exchange St sidewalk, by Calloway Ave
 const pl = { x: CITY.LX.roads[2][1] + 3, z: CITY.LZ.roads[2][1] + 8, y: .15, h: Math.PI, sp: 0 };
 let camYaw = Math.PI*.15 + Math.PI, camPitch = .28, camDist = 4.6, night = 0, nightT = 0;
-const keys = {}; addEventListener("keydown", e => { keys[e.code] = true; if (e.code === "KeyF") punch(); if (e.code === "KeyN") setNight(!nightT);
+const keys = {}; addEventListener("keydown", e => { keys[e.code] = true; if (e.code === "KeyE") act(); if (e.code === "KeyF") punch(); if (e.code === "KeyN") setNight(!nightT);
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault(); });
 addEventListener("keyup", e => { keys[e.code] = false; });
 let punchT = -9; function punch() { punchT = performance.now()/1000; t0 = punchT; }
@@ -1344,9 +1434,23 @@ const up_ = e => { if (e.pointerId === stick.id) { stick.id = null; stick.x = st
 canvas.addEventListener("pointerup", up_); canvas.addEventListener("pointercancel", up_);
 canvas.addEventListener("wheel", e => { e.preventDefault(); camDist = Math.max(2.2, Math.min(14, camDist*(1 + e.deltaY*.001))); }, { passive: false });
 const inBox = (x, z, b, r) => x > b[0] - r && x < b[2] + r && z > b[1] - r && z < b[3] + r;
-function blocked(x, z) { for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; return x < L.roads[0][0] || x > L.roads[L.roads.length - 1][1] || z < Z.roads[0][0] || z > Z.roads[Z.roads.length - 1][1]; }
+function blocked(x, z) { for (const b of CITY.SOLID) if (inBox(x, z, b, .35)) return true; for (const b of CAR.SOLID()) if (inBox(x, z, b, 0)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, .2)) return true; for (const n of NPCS) if (Math.hypot(x - n.x, z - n.z) < .6) return true; const L = CITY.LX, Z = CITY.LZ; return x < L.roads[0][0] || x > L.roads[L.roads.length - 1][1] || z < Z.roads[0][0] || z > Z.roads[Z.roads.length - 1][1]; }
 gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
 let last = 0; const label = document.getElementById("where");
+pl.inCar = false;
+const actB = document.getElementById("actB");
+function carBlocked(x, z) { for (const b of CITY.SOLID) if (inBox(x, z, b, 0)) return true; for (const b of TREES.SOLID) if (inBox(x, z, b, 0)) return true;
+  for (const n of NPCS) if (Math.hypot(x - n.x, z - n.z) < .55) return true; const L = CITY.LX, Z = CITY.LZ; return x < L.roads[0][0] || x > L.roads[L.roads.length - 1][1] || z < Z.roads[0][0] || z > Z.roads[Z.roads.length - 1][1]; }
+function actState() { const c = CAR.st, G = CITY.GARAGE;
+  if (pl.inCar) return Math.abs(c.v) < 2 ? "exit" : null;
+  if (c.on && Math.hypot(pl.x - c.x, pl.z - c.z) < 3.2) return "enter";
+  if (G && Math.hypot(pl.x - G.door[0], pl.z - G.door[1]) < 4.5) return "get"; return null; }
+function act() { const k = actState(), c = CAR.st, G = CITY.GARAGE; if (!k) return;
+  if (k === "exit") { const lx = Math.cos(c.h), lz = -Math.sin(c.h);
+    for (const s of [1.5, -1.5, 2.5, -2.5]) { const x = c.x + lx*s, z = c.z + lz*s; if (!blocked(x, z)) { pl.inCar = false; pl.x = x; pl.z = z; pl.h = c.h; pl.sp = 0; return; } } return; }
+  if (k === "get") { const cal = CITY.LZ.roads[2], z = (cal[0] + cal[1])/2 + 4; CAR.spawn(G.door[0], z, Math.PI/2); camYaw = -Math.PI/2; }
+  pl.inCar = true; c.v = 0; }
+if (actB) actB.addEventListener("pointerdown", e => { e.preventDefault(); act(); });
 function streetName(x, z) { const L = CITY.LX, Z = CITY.LZ, NS = ["2nd St", "3rd St", "Exchange St", "Bourse St", "Mint St"], EW = ["Ledger Ave", "Tower Ave", "Calloway Ave", "Bond Ave", "Market Ave"];
   let a = null, b = null; L.roads.forEach((r, i) => { if (x > r[0] - 6 && x < r[1] + 6) a = NS[i]; }); Z.roads.forEach((r, i) => { if (z > r[0] - 6 && z < r[1] + 6) b = EW[i]; });
   return a && b ? a + " & " + b : a || b || "Finance District"; }
@@ -1355,6 +1459,7 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   // input -> camera-relative movement
   let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stick.x, iz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stick.y;
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
+  const cIx = ix, cIz = iz; if (pl.inCar) { ix = 0; iz = 0; }
   const running = keys.ShiftLeft || keys.ShiftRight || runLatch || Math.hypot(stick.x, stick.y) > .92, punching = t - punchT < .55;
   const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = -fz, rz = fx;
   const mx = fx*iz + rx*ix, mz = fz*iz + rz*ix, ml = Math.hypot(mx, mz);
@@ -1363,16 +1468,20 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   const nx = pl.x + Math.sin(pl.h)*pl.sp*dt, nz = pl.z + Math.cos(pl.h)*pl.sp*dt;
   if (!blocked(nx, pl.z)) pl.x = nx; if (!blocked(pl.x, nz)) pl.z = nz;
   pl.y += (CITY.groundY(pl.x, pl.z) - pl.y)*Math.min(1, dt*14);
+  if (pl.inCar) { CAR.update(dt, Math.max(-1, Math.min(1, cIz)), Math.max(-1, Math.min(1, cIx)), !!keys.Space, carBlocked); pl.x = CAR.st.x; pl.z = CAR.st.z; pl.y = CAR.st.y; pl.sp = 0; }
+  else if (CAR.st.on) CAR.update(dt, 0, 0, true, carBlocked);
   move = punching ? "Punch" : pl.sp > 3 ? "Run" : pl.sp > .3 ? "Walk" : "Idle";
   // camera: follows behind, eases toward the player's back while walking
-  if (!camDrag && pl.sp > .3) { let d = (pl.h + Math.PI) - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d*Math.min(1, dt*1.2); }
-  const tgt = [pl.x, pl.y + 1.55, pl.z]; let cd = camDist;
-  for (let k = .5; k <= camDist; k += .25) { const x = tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*k, z = tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*k; if (CITY.SOLID.some(b => inBox(x, z, b, .25))) { cd = Math.max(.6, k - .3); break; } }
+  if (pl.inCar && !camDrag && Math.abs(CAR.st.v) > .5) { let d = (CAR.st.h + (CAR.st.v < 0 ? 0 : Math.PI)) - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d*Math.min(1, dt*2.2); }
+  if (!pl.inCar && !camDrag && pl.sp > .3) { let d = (pl.h + Math.PI) - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); camYaw += d*Math.min(1, dt*1.2); }
+  const tgt = [pl.x, pl.y + (pl.inCar ? 1.7 : 1.55), pl.z], camD = pl.inCar ? Math.max(camDist, 8.5) : camDist; let cd = camD;
+  for (let k = .5; k <= camD; k += .25) { const x = tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*k, z = tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*k; if (CITY.SOLID.some(b => inBox(x, z, b, .25))) { cd = Math.max(.6, k - .3); break; } }
   const eye = [tgt[0] + Math.sin(camYaw)*Math.cos(camPitch)*cd, Math.max(pl.y + .4, tgt[1] + Math.sin(camPitch)*cd), tgt[2] + Math.cos(camYaw)*Math.cos(camPitch)*cd];
   const VP = mul(persp(55*Math.PI/180, W/H, .1, 1600), lookAt(eye, tgt));
   const n = night;
   // animate everyone first (the shadow pass needs their poses)
-  const live = [{ h: hero, sks: hero.skins }];
+  const live = pl.inCar ? [] : [{ h: hero, sks: hero.skins }];
+  if (CAR.st.on) { CAR.place(); live.push({ h: CAR.root, sks: [], car: true }); }
   pose(t, hero.parts, move, t0); hero.t = [pl.x, pl.y, pl.z]; hero.r[1] = pl.h; computeWorld(hero, ident()); setS(hero); hero.skins.forEach(updateSkin);
   const fx2 = tgt[0] - eye[0], fz2 = tgt[2] - eye[2];
   frameNo++; if (frameNo > 3 && frameNo % 3 === 0) { const nb = NPCS.find(q => !q.h); if (nb) buildNPC(nb); }
@@ -1386,10 +1495,11 @@ function frame(ms) { const t = ms/1000, dt = Math.min(.05, t - (last || t)); las
   gl.useProgram(prog); [A.P, A.N, A.U].forEach(a => gl.enableVertexAttribArray(a)); gl.uniform1i(U.uT, 0); gl.uniform1f(dimLoc, 1 - .62*n);
   gl.uniformMatrix4fv(CU("uShVP"), false, LVP || ident()); gl.uniform1f(CU("uShOn"), LVP ? 1 : 0); gl.uniform1i(CU("uShTex"), 2); gl.uniform3fv(CU("uSunD"), SUND); gl.uniform1f(CU("uNightC"), n);
   gl.uniformMatrix4fv(U.uVP, false, VP); gl.uniform3fv(U.uEye, eye);
-  for (const c of live) { const h = c.h; shadowN.t = [h.t[0], h.t[1] + .02, h.t[2]]; computeWorld(shadowN, ident());
+  for (const c of live) { const h = c.h; if (c.car) { drawTree(h); continue; } shadowN.t = [h.t[0], h.t[1] + .02, h.t[2]]; computeWorld(shadowN, ident());
     gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO); drawTree(shadowN); gl.disable(gl.BLEND); gl.depthMask(true);
     drawTree(h); const I = ident(); for (const m of c.sks) drawMesh(m, I); }
   [A.P, A.N, A.U].forEach(a => gl.disableVertexAttribArray(a));
+  if (actB) { const k = actState(); actB.hidden = !k; if (k) actB.textContent = { get: "Get a car (E)", enter: "Get in (E)", exit: "Get out (E)" }[k]; }
   if (((t*4)|0) % 2 === 0) label.textContent = streetName(pl.x, pl.z);
   requestAnimationFrame(frame); }
 function drawMesh(g, M) {
